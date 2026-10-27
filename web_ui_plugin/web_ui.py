@@ -7,12 +7,17 @@ from flask import (
     flash,
     jsonify,
     session,
+    g,
+    has_request_context,
+    Response,
+    send_from_directory,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import core
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -21,9 +26,30 @@ import zoneinfo
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from logger import get_logger
+from web_ui_plugin import i18n
 
 # Get logger for this module
 logger = get_logger(__name__)
+
+# ------------------------------------------------------------------ translations
+def current_language():
+    """Language for this request: Configuration setting, else the browser's, else English."""
+    if not has_request_context():
+        return i18n.DEFAULT_LANGUAGE
+    if "lang" not in g:
+        g.lang = i18n.resolve_language(
+            db.get_parameter("language"), request.accept_languages
+        )
+    return g.lang
+
+
+def tr(msgid, **kwargs):
+    return i18n.translate(current_language(), msgid, **kwargs)
+
+
+def tr_n(singular, plural, n):
+    return tr(singular if n == 1 else plural, n=n)
+
 
 # Create Flask app
 app = Flask(
@@ -47,6 +73,8 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
 )
 
+app.jinja_env.globals.update(_=tr, _n=tr_n)
+
 # ------------------------------------------------------------------ authentication
 # Optional password for the whole web UI. Set it from Configuration > Security, or with the
 # VN_WEB_PASSWORD environment variable (which takes precedence, handy if the password is lost).
@@ -54,6 +82,8 @@ MAX_LOGIN_FAILURES = 5
 LOGIN_LOCK_SECONDS = 60
 MIN_PASSWORD_LENGTH = 8
 _login_failures = {}  # ip -> (failures, locked_until)
+# Reachable without logging in: the login page, static files and what a PWA needs to install
+PUBLIC_ENDPOINTS = ("static", "login", "manifest", "service_worker", "offline")
 
 
 def _env_password():
@@ -91,14 +121,14 @@ def _safe_next(target):
 
 @app.before_request
 def require_login():
-    if not auth_enabled() or request.endpoint in ("static", "login"):
+    if not auth_enabled() or request.endpoint in PUBLIC_ENDPOINTS:
         return None
     if session.get("auth") == _auth_token():
         return None
     if request.headers.get("X-Requested-With") == "fetch" or request.path.startswith(
         "/control"
     ):
-        return jsonify({"status": "error", "message": "Login required"}), 401
+        return jsonify({"status": "error", "message": tr("Login required")}), 401
     return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
 
@@ -111,7 +141,7 @@ def login():
     error = None
     if request.method == "POST":
         if locked_until > time.time():
-            error = f"Too many attempts. Try again in {int(locked_until - time.time()) + 1} seconds."
+            error = tr("Too many attempts. Try again in %(n)s seconds.", n=int(locked_until - time.time()) + 1)
         elif _check_password(request.form.get("password", "")):
             _login_failures.pop(ip, None)
             session.clear()
@@ -122,7 +152,7 @@ def login():
             failures += 1
             locked_until = time.time() + LOGIN_LOCK_SECONDS if failures >= MAX_LOGIN_FAILURES else 0
             _login_failures[ip] = (0 if locked_until else failures, locked_until)
-            error = "Wrong password."
+            error = tr("Wrong password.")
     return render_template(
         "login.html", error=error, next=request.values.get("next", "")
     ), (429 if error and locked_until > time.time() else 200)
@@ -137,33 +167,33 @@ def logout():
 @app.route("/security/password", methods=["POST"])
 def set_password():
     if _env_password():
-        flash("The password is managed by the VN_WEB_PASSWORD environment variable.", "warning")
+        flash(tr("The password is managed by the VN_WEB_PASSWORD environment variable."), "warning")
         return redirect(url_for("config", _anchor="security"))
     if _password_hash() and not _check_password(request.form.get("current_password", "")):
-        flash("Current password is wrong.", "danger")
+        flash(tr("Current password is wrong."), "danger")
         return redirect(url_for("config", _anchor="security"))
     new = request.form.get("new_password", "")
     if len(new) < MIN_PASSWORD_LENGTH:
-        flash(f"Use at least {MIN_PASSWORD_LENGTH} characters.", "danger")
+        flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
     elif new != request.form.get("confirm_password", ""):
-        flash("The two passwords do not match.", "danger")
+        flash(tr("The two passwords do not match."), "danger")
     else:
         db.set_parameter("web_password_hash", generate_password_hash(new))
         session["auth"] = _auth_token()  # keep this browser logged in
         session.permanent = True
-        flash("Password saved. Other browsers have been logged out.", "success")
+        flash(tr("Password saved. Other browsers have been logged out."), "success")
     return redirect(url_for("config", _anchor="security"))
 
 
 @app.route("/security/password/remove", methods=["POST"])
 def remove_password():
     if _env_password():
-        flash("The password is managed by the VN_WEB_PASSWORD environment variable.", "warning")
+        flash(tr("The password is managed by the VN_WEB_PASSWORD environment variable."), "warning")
     elif not _check_password(request.form.get("current_password", "")):
-        flash("Current password is wrong.", "danger")
+        flash(tr("Current password is wrong."), "danger")
     else:
         db.set_parameter("web_password_hash", "")
-        flash("Password removed. The web interface is open to anyone who can reach it.", "warning")
+        flash(tr("Password removed. The web interface is open to anyone who can reach it."), "warning")
     return redirect(url_for("config", _anchor="security"))
 
 
@@ -195,6 +225,9 @@ def inject_current_year():
         "current_year": datetime.now().year,
         "display_tz": db.get_parameter("timezone") or "",
         "auth_enabled": auth_enabled(),
+        "lang": current_language(),
+        "languages": i18n.available_languages(),
+        "js_i18n": i18n.js_catalog(current_language()),
     }
 
 
@@ -222,7 +255,7 @@ def _clean_int(field, default, minimum=1):
             return str(value)
     except ValueError:
         pass
-    flash(f"Invalid value for {field}, using {default}", "warning")
+    flash(tr("Invalid value for %(field)s, using %(default)s", field=field, default=default), "warning")
     return str(default)
 
 
@@ -273,6 +306,7 @@ def _format_item(item):
     except (TypeError, ValueError):
         pass
     return {
+        "id": item[0],
         "title": item[1],
         "price": item[2],
         "currency": item[3],
@@ -355,11 +389,11 @@ def add_query():
             max_price=parse_max_price(request.form.get("max_price")),
         )
         if is_new_query:
-            flash(f"Query added: {query}", "success")
+            flash(tr("Query added: %(query)s", query=query), "success")
         else:
-            flash(message, "warning")
+            flash(tr(message), "warning")
     else:
-        flash("No query provided", "error")
+        flash(tr("No query provided"), "error")
 
     return redirect(url_for("queries"))
 
@@ -368,9 +402,9 @@ def add_query():
 def remove_query(query_id):
     message, success = core.process_remove_query(str(query_id))
     if success:
-        flash("Query removed", "success")
+        flash(tr("Query removed"), "success")
     else:
-        flash(message, "error")
+        flash(tr(message), "error")
 
     return redirect(url_for("queries"))
 
@@ -379,9 +413,9 @@ def remove_query(query_id):
 def remove_all_queries():
     message, success = core.process_remove_query("all")
     if success:
-        flash("All queries removed", "success")
+        flash(tr("All queries removed"), "success")
     else:
-        flash(message, "error")
+        flash(tr(message), "error")
 
     return redirect(url_for("queries"))
 
@@ -401,11 +435,11 @@ def update_query(query_id):
             max_price=parse_max_price(request.form.get("max_price")),
         )
         if success:
-            flash("Query updated", "success")
+            flash(tr("Query updated"), "success")
         else:
-            flash(message, "error")
+            flash(tr(message), "error")
     else:
-        flash("No query provided", "error")
+        flash(tr("No query provided"), "error")
 
     return redirect(url_for("queries"))
 
@@ -519,6 +553,7 @@ def _items_context():
         autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
         autorefresh_interval=max(5, _setting_int("query_refresh_delay", 60)),
         deal_percent=round((1 - db.DEAL_RATIO) * 100),
+        new_items_notice=db.get_parameter("new_items_notice") != "False",
     )
 
 
@@ -538,11 +573,59 @@ def clear_items():
     query_id = request.form.get("query_id", type=int)
     deleted = db.clear_items(query_id)
     flash(
-        f"Deleted {deleted} item{'s' if deleted != 1 else ''}. "
-        "Existing listings will be recorded silently on the next check.",
+        tr_n("Deleted %(n)s item. ", "Deleted %(n)s items. ", deleted)
+        + tr("Existing listings will be recorded silently on the next check."),
         "success",
     )
     return redirect(url_for("items"))
+
+
+# ------------------------------------------------------------------ progressive web app
+@app.route("/manifest.webmanifest")
+def manifest():
+    icon = lambda name, size, purpose="any": {
+        "src": url_for("static", filename=f"icons/{name}"),
+        "sizes": size,
+        "type": "image/png",
+        "purpose": purpose,
+    }
+    data = {
+        "name": "Vinted Notifications",
+        "short_name": "Vinted",
+        "description": tr("New Vinted listings for your searches, as they appear."),
+        "id": "/",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "any",
+        "lang": current_language(),
+        "background_color": "#F2F5F4",
+        "theme_color": "#0F2B30",
+        "icons": [
+            icon("icon-192.png", "192x192"),
+            icon("icon-512.png", "512x512"),
+            icon("icon-maskable-512.png", "512x512", "maskable"),
+        ],
+        "shortcuts": [
+            {"name": tr("Items"), "url": "/items"},
+            {"name": tr("Queries"), "url": "/queries"},
+        ],
+    }
+    return Response(json.dumps(data), mimetype="application/manifest+json")
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Served from the root so the worker controls the whole site."""
+    response = send_from_directory(app.static_folder, "sw.js", mimetype="text/javascript")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
 
 
 @app.route("/config")
@@ -552,6 +635,7 @@ def config():
         "config.html",
         params=params,
         timezones=sorted(zoneinfo.available_timezones()),
+        languages=i18n.available_languages(),
         password_set=bool(_password_hash()),
         password_env=bool(_env_password()),
         min_password_length=MIN_PASSWORD_LENGTH,
@@ -581,10 +665,14 @@ def update_config():
             zoneinfo.ZoneInfo(timezone)
         db.set_parameter("timezone", timezone)
     except Exception:
-        flash(f'Unknown timezone "{timezone}", keeping the previous one', "warning")
+        flash(tr('Unknown timezone "%(tz)s", keeping the previous one', tz=timezone), "warning")
     db.set_parameter("banwords", request.form.get("banwords", ""))
     items_autorefresh = "items_autorefresh" in request.form
     db.set_parameter("items_autorefresh", str(items_autorefresh))
+    db.set_parameter("new_items_notice", str("new_items_notice" in request.form))
+    language = request.form.get("language", "")
+    if language == "" or language in dict(i18n.available_languages()):
+        db.set_parameter("language", language)
 
     # Update Proxy parameters
     check_proxies = "check_proxies" in request.form
@@ -601,21 +689,21 @@ def update_config():
     db.set_parameter("last_proxy_check_time", "1")
     logger.info("Proxy settings updated, cache reset")
 
-    flash("Configuration updated", "success")
+    flash(tr("Configuration updated"), "success")
     return redirect(url_for("config"))
 
 
 @app.route("/control/<process_name>/<action>", methods=["POST"])
 def control_process(process_name, action):
     if process_name not in ["telegram", "rss"]:
-        return jsonify({"status": "error", "message": "Invalid process name"})
+        return jsonify({"status": "error", "message": tr("Invalid process name")})
 
     if action == "start":
         if process_name == "telegram":
             # Check current status
             if db.get_parameter("telegram_process_running") == "True":
                 return jsonify(
-                    {"status": "warning", "message": "Telegram bot already running"}
+                    {"status": "warning", "message": tr("Telegram bot already running")}
                 )
 
             # Check if telegram_token and telegram_chat_id are set
@@ -625,7 +713,7 @@ def control_process(process_name, action):
                 return jsonify(
                     {
                         "status": "error",
-                        "message": "Please set Telegram token and chat ID in the configuration panel before starting the Telegram process",
+                        "message": tr("Please set Telegram token and chat ID in the configuration panel before starting the Telegram process"),
                     }
                 )
 
@@ -634,28 +722,28 @@ def control_process(process_name, action):
             db.set_parameter("telegram_process_running", "True")
             logger.info("Telegram bot process start requested")
             return jsonify(
-                {"status": "success", "message": "Telegram bot start requested"}
+                {"status": "success", "message": tr("Telegram bot start requested")}
             )
 
         elif process_name == "rss":
             # Check current status
             if db.get_parameter("rss_process_running") == "True":
                 return jsonify(
-                    {"status": "warning", "message": "RSS feed already running"}
+                    {"status": "warning", "message": tr("RSS feed already running")}
                 )
 
             # Update process status in the database
             # The manager process will detect this and start the process
             db.set_parameter("rss_process_running", "True")
             logger.info("RSS feed process start requested")
-            return jsonify({"status": "success", "message": "RSS feed start requested"})
+            return jsonify({"status": "success", "message": tr("RSS feed start requested")})
 
     elif action == "stop":
         if process_name == "telegram":
             # Check current status
             if db.get_parameter("telegram_process_running") != "True":
                 return jsonify(
-                    {"status": "warning", "message": "Telegram bot not running"}
+                    {"status": "warning", "message": tr("Telegram bot not running")}
                 )
 
             # Update process status in the database
@@ -663,21 +751,21 @@ def control_process(process_name, action):
             db.set_parameter("telegram_process_running", "False")
             logger.info("Telegram bot process stop requested")
             return jsonify(
-                {"status": "success", "message": "Telegram bot stop requested"}
+                {"status": "success", "message": tr("Telegram bot stop requested")}
             )
 
         elif process_name == "rss":
             # Check current status
             if db.get_parameter("rss_process_running") != "True":
-                return jsonify({"status": "warning", "message": "RSS feed not running"})
+                return jsonify({"status": "warning", "message": tr("RSS feed not running")})
 
             # Update process status in the database
             # The manager process will detect this and stop the process
             db.set_parameter("rss_process_running", "False")
             logger.info("RSS feed process stop requested")
-            return jsonify({"status": "success", "message": "RSS feed stop requested"})
+            return jsonify({"status": "success", "message": tr("RSS feed stop requested")})
 
-    return jsonify({"status": "error", "message": "Invalid action"})
+    return jsonify({"status": "error", "message": tr("Invalid action")})
 
 
 @app.route("/control/status", methods=["GET"])
@@ -703,9 +791,13 @@ def add_country():
     country = request.form.get("country", "").strip()
     if country:
         message, country_list = core.process_add_country(country)
-        flash(message, "success" if "added" in message else "warning")
+        if message.startswith('Country "') and message.endswith("already in allowlist."):
+            shown = tr('Country "%(c)s" already in allowlist.', c=country.replace(" ", "").upper())
+        else:
+            shown = tr(message)
+        flash(shown, "success" if "added" in message else "warning")
     else:
-        flash("No country provided", "error")
+        flash(tr("No country provided"), "error")
 
     return redirect(url_for("allowlist"))
 
@@ -713,7 +805,7 @@ def add_country():
 @app.route("/remove_country/<country>", methods=["POST"])
 def remove_country(country):
     message, country_list = core.process_remove_country(country)
-    flash(message, "success")
+    flash(tr(message), "success")
 
     return redirect(url_for("allowlist"))
 
@@ -721,7 +813,7 @@ def remove_country(country):
 @app.route("/clear_allowlist", methods=["POST"])
 def clear_allowlist():
     db.clear_allowlist()
-    flash("Allowlist cleared", "success")
+    flash(tr("Allowlist cleared"), "success")
 
     return redirect(url_for("allowlist"))
 

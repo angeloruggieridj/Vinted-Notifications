@@ -5,21 +5,21 @@
 {%- if item.seller_stars is not none %}
 <span class="rating"><i class="bi bi-star-fill"></i> {{ '%.1f'|format(item.seller_stars) }}
     <small>({{ item.seller_reviews }})</small></span>
-{%- if item.seller_reviews < 5 %}<span class="flag-new" title="Fewer than 5 reviews">new</span>{% endif -%}
+{%- if item.seller_reviews < 5 %}<span class="flag-new" title="{{ _('Fewer than 5 reviews') }}">{{ _("new") }}</span>{% endif -%}
 {%- else %}
-<span class="rating"><small>no rating</small></span>
+<span class="rating"><small>{{ _("no rating") }}</small></span>
 {%- endif -%}
 {%- else -%}
-<span class="text-muted">Seller unknown</span>
+<span class="text-muted">{{ _("Seller unknown") }}</span>
 {%- endif -%}
 {%- endmacro %}
 
 {% macro deal_card(item) %}
-<article class="deal">
+<article class="deal" data-id="{{ item.id }}">
     <a class="deal-photo" href="{{ item.url }}" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">
         {% if item.photo_url %}<img src="{{ item.photo_url }}" alt="" loading="lazy">{% else %}<span class="ph"><i class="bi bi-image"></i></span>{% endif %}
         <span class="deal-query">{{ item.query }}</span>
-        {% if item.deal_pct %}<span class="deal-flag" title="Average for this query: {{ item.avg_price }} {{ item.currency }}">&minus;{{ item.deal_pct }}% vs avg</span>{% endif %}
+        {% if item.deal_pct %}<span class="deal-flag" title="{{ _('Average for this query: %(avg)s', avg=item.avg_price ~ ' ' ~ item.currency) }}">{{ _('−%(n)s%% vs avg', n=item.deal_pct) }}</span>{% endif %}
         <span class="price-tag">{{ item.price }} {{ item.currency }}</span>
     </a>
     <div class="deal-body">
@@ -27,8 +27,8 @@
         <div class="seller">{{ seller_info(item) }}</div>
     </div>
     <div class="deal-foot">
-        <span title="When the scraper first saw this listing"><i class="bi bi-clock me-1"></i><time class="local-ts" data-rel="1" data-ts="{{ item.ts }}">{{ item.timestamp }}</time></span>
-        <a class="deal-open" href="{{ item.url }}" target="_blank" rel="noopener">Open <i class="bi bi-box-arrow-up-right"></i></a>
+        <span title="{{ _('When the scraper first saw this listing') }}"><i class="bi bi-clock me-1"></i><time class="local-ts" data-rel="1" data-ts="{{ item.ts }}">{{ item.timestamp }}</time></span>
+        <a class="deal-open" href="{{ item.url }}" target="_blank" rel="noopener">{{ _("Open") }} <i class="bi bi-box-arrow-up-right"></i></a>
     </div>
 </article>
 {% endmacro %}

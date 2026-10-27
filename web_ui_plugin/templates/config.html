@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 
-{% block title %}Configuration - Vinted Notifications{% endblock %}
+{% block title %}{{ _("Configuration - Vinted Notifications") }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap align-items-center">
-    <h1 class="h2">Configuration</h1>
+    <h1 class="h2">{{ _("Configuration") }}</h1>
 </div>
 
 <div class="settings">
-    <nav class="settings-nav" aria-label="Settings sections">
-        <a href="#general" data-pane="general"><i class="bi bi-sliders"></i> General</a>
-        <a href="#notifications" data-pane="notifications"><i class="bi bi-bell"></i> Notifications</a>
-        <a href="#network" data-pane="network"><i class="bi bi-shield-lock"></i> Network</a>
-        <a href="#security" data-pane="security"><i class="bi bi-key"></i> Security</a>
+    <nav class="settings-nav" aria-label="{{ _('Settings sections') }}">
+        <a href="#general" data-pane="general"><i class="bi bi-sliders"></i> {{ _("General") }}</a>
+        <a href="#notifications" data-pane="notifications"><i class="bi bi-bell"></i> {{ _("Notifications") }}</a>
+        <a href="#network" data-pane="network"><i class="bi bi-shield-lock"></i> {{ _("Network") }}</a>
+        <a href="#security" data-pane="security"><i class="bi bi-key"></i> {{ _("Security") }}</a>
     </nav>
 
     <div class="settings-body">
@@ -21,53 +21,71 @@
             <!-- General -->
             <section class="pane" id="pane-general">
                 <div class="panel">
-                    <h2 class="panel-title">Scraping</h2>
+                    <h2 class="panel-title">{{ _("Scraping") }}</h2>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label for="items_per_query" class="form-label">Items per query</label>
+                            <label for="items_per_query" class="form-label">{{ _("Items per query") }}</label>
                             <input type="number" class="form-control" id="items_per_query" name="items_per_query" min="1" value="{{ params.items_per_query }}">
-                            <div class="form-text">Newest listings fetched from Vinted on every check.</div>
+                            <div class="form-text">{{ _("Newest listings fetched from Vinted on every check.") }}</div>
                         </div>
                         <div class="col-md-6">
-                            <label for="query_refresh_delay" class="form-label">Check every (seconds)</label>
+                            <label for="query_refresh_delay" class="form-label">{{ _("Check every (seconds)") }}</label>
                             <input type="number" class="form-control" id="query_refresh_delay" name="query_refresh_delay" min="1" value="{{ params.query_refresh_delay }}">
-                            <div class="form-text">Delay between two checks of your queries.</div>
+                            <div class="form-text">{{ _("Delay between two checks of your queries.") }}</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h2 class="panel-title">Display</h2>
+                    <h2 class="panel-title">{{ _("Display") }}</h2>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label for="timezone" class="form-label">Timezone</label>
+                            <label for="timezone" class="form-label">{{ _("Timezone") }}</label>
                             <input type="text" class="form-control" id="timezone" name="timezone" list="timezoneList"
-                                   value="{{ params.timezone or '' }}" placeholder="Browser default" autocomplete="off">
+                                   value="{{ params.timezone or '' }}" placeholder="{{ _('Browser default') }}" autocomplete="off">
                             <datalist id="timezoneList">
                                 {% for tz in timezones %}<option value="{{ tz }}">{% endfor %}
                             </datalist>
-                            <div class="form-text">For example Europe/Rome or Europe/London. Leave empty to use your browser's timezone.</div>
+                            <div class="form-text">{{ _("For example Europe/Rome or Europe/London. Leave empty to use your browser's timezone.") }}</div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label d-block">Items page</label>
+                            <label class="form-label d-block">{{ _("Items page") }}</label>
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" id="items_autorefresh" name="items_autorefresh" {% if params.items_autorefresh == 'True' %}checked{% endif %}>
-                                <label class="form-check-label" for="items_autorefresh">Auto-refresh</label>
+                                <label class="form-check-label" for="items_autorefresh">{{ _("Auto-refresh") }}</label>
                             </div>
-                            <div class="form-text">Reload the list on every check, with a progress bar to the next refresh.</div>
+                            <div class="form-text">{{ _("Reload the list on every check, with a progress bar to the next refresh.") }}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="language" class="form-label">{{ _("Language") }}</label>
+                            <select class="form-select" id="language" name="language">
+                                <option value="" {% if not params.language %}selected{% endif %}>{{ _("Automatic (browser language)") }}</option>
+                                {% for code, name in languages %}
+                                <option value="{{ code }}" {% if params.language == code %}selected{% endif %}>{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">{{ _("Applies after you save. Automatic follows each browser's language, with English as the fallback.") }}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label d-block">{{ _("New items notice") }}</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="new_items_notice" name="new_items_notice" {% if params.new_items_notice != 'False' %}checked{% endif %}>
+                                <label class="form-check-label" for="new_items_notice">{{ _("Show a box when a refresh finds new items") }}</label>
+                            </div>
+                            <div class="form-text">{{ _("Appears on the Items page, with a preview of the new listings.") }}</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h2 class="panel-title">Banned words</h2>
+                    <h2 class="panel-title">{{ _("Banned words") }}</h2>
                     <div class="input-group mb-2">
-                        <input type="text" class="form-control" id="banwords-input" placeholder="Word to ban">
-                        <button class="btn btn-outline-secondary" type="button" id="add-banword-btn">Add</button>
+                        <input type="text" class="form-control" id="banwords-input" placeholder="{{ _('Word to ban') }}">
+                        <button class="btn btn-outline-secondary" type="button" id="add-banword-btn">{{ _("Add") }}</button>
                     </div>
                     <div id="banwords-container" class="d-flex flex-wrap gap-2 mb-2"></div>
                     <input type="hidden" id="banwords" name="banwords" value="{{ params.banwords }}">
-                    <div class="form-text">Listings with any of these words in the title are ignored.</div>
+                    <div class="form-text">{{ _("Listings with any of these words in the title are ignored.") }}</div>
                 </div>
             </section>
 
@@ -75,102 +93,102 @@
             <section class="pane" id="pane-notifications">
                 <div class="panel">
                     <div class="panel-head">
-                        <h2 class="panel-title"><i class="bi bi-telegram"></i> Telegram bot</h2>
+                        <h2 class="panel-title"><i class="bi bi-telegram"></i> {{ _("Telegram bot") }}</h2>
                         <div class="service-controls">
-                            <small class="process-status text-muted" data-process="telegram">Checking...</small>
-                            <button type="button" class="btn btn-sm btn-success process-control" data-process="telegram" data-action="start"><i class="bi bi-play-fill"></i> Start</button>
-                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="telegram" data-action="stop"><i class="bi bi-stop-fill"></i> Stop</button>
+                            <small class="process-status text-muted" data-process="telegram">{{ _("Checking...") }}</small>
+                            <button type="button" class="btn btn-sm btn-success process-control" data-process="telegram" data-action="start"><i class="bi bi-play-fill"></i> {{ _("Start") }}</button>
+                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="telegram" data-action="stop"><i class="bi bi-stop-fill"></i> {{ _("Stop") }}</button>
                         </div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="telegram_enabled" name="telegram_enabled" {% if params.telegram_enabled == 'True' %}checked{% endif %}>
-                        <label class="form-check-label" for="telegram_enabled">Start automatically</label>
+                        <label class="form-check-label" for="telegram_enabled">{{ _("Start automatically") }}</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label for="telegram_token" class="form-label">Bot token</label>
+                            <label for="telegram_token" class="form-label">{{ _("Bot token") }}</label>
                             <input type="text" class="form-control" id="telegram_token" name="telegram_token" value="{{ params.telegram_token }}" autocomplete="off">
-                            <div class="form-text">Get it from BotFather.</div>
+                            <div class="form-text">{{ _("Get it from BotFather.") }}</div>
                         </div>
                         <div class="col-md-6">
-                            <label for="telegram_chat_id" class="form-label">Chat ID</label>
+                            <label for="telegram_chat_id" class="form-label">{{ _("Chat ID") }}</label>
                             <input type="text" class="form-control" id="telegram_chat_id" name="telegram_chat_id" value="{{ params.telegram_chat_id }}">
-                            <div class="form-text">Where notifications are sent.</div>
+                            <div class="form-text">{{ _("Where notifications are sent.") }}</div>
                         </div>
                     </div>
                 </div>
 
                 <div class="panel">
                     <div class="panel-head">
-                        <h2 class="panel-title"><i class="bi bi-rss"></i> RSS feed</h2>
+                        <h2 class="panel-title"><i class="bi bi-rss"></i> {{ _("RSS feed") }}</h2>
                         <div class="service-controls">
-                            <small class="process-status text-muted" data-process="rss">Checking...</small>
-                            <button type="button" class="btn btn-sm btn-success process-control" data-process="rss" data-action="start"><i class="bi bi-play-fill"></i> Start</button>
-                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="rss" data-action="stop"><i class="bi bi-stop-fill"></i> Stop</button>
+                            <small class="process-status text-muted" data-process="rss">{{ _("Checking...") }}</small>
+                            <button type="button" class="btn btn-sm btn-success process-control" data-process="rss" data-action="start"><i class="bi bi-play-fill"></i> {{ _("Start") }}</button>
+                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="rss" data-action="stop"><i class="bi bi-stop-fill"></i> {{ _("Stop") }}</button>
                         </div>
                     </div>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="rss_enabled" name="rss_enabled" {% if params.rss_enabled == 'True' %}checked{% endif %}>
-                        <label class="form-check-label" for="rss_enabled">Start automatically</label>
+                        <label class="form-check-label" for="rss_enabled">{{ _("Start automatically") }}</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label for="rss_port" class="form-label">Port</label>
+                            <label for="rss_port" class="form-label">{{ _("Port") }}</label>
                             <input type="number" class="form-control" id="rss_port" name="rss_port" min="1" max="65535" value="{{ params.rss_port }}">
-                            <div class="form-text">The feed is public on this port: it is not covered by the web interface password.</div>
+                            <div class="form-text">{{ _("The feed is public on this port: it is not covered by the web interface password.") }}</div>
                         </div>
                         <div class="col-md-6">
-                            <label for="rss_max_items" class="form-label">Items in the feed</label>
+                            <label for="rss_max_items" class="form-label">{{ _("Items in the feed") }}</label>
                             <input type="number" class="form-control" id="rss_max_items" name="rss_max_items" min="1" value="{{ params.rss_max_items }}">
                         </div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h2 class="panel-title">Message template</h2>
+                    <h2 class="panel-title">{{ _("Message template") }}</h2>
                     <textarea class="form-control font-monospace" id="message_template" name="message_template" rows="6">{{ params.message_template }}</textarea>
-                    <div class="form-text">Variables: {title}, {price}, {brand}, {image}.</div>
+                    <div class="form-text">{{ _("Variables: {title}, {price}, {brand}, {image}.") }}</div>
                 </div>
             </section>
 
             <!-- Network -->
             <section class="pane" id="pane-network">
                 <div class="panel">
-                    <h2 class="panel-title">Proxies</h2>
+                    <h2 class="panel-title">{{ _("Proxies") }}</h2>
                     <div class="form-check form-switch mb-3">
                         <input class="form-check-input" type="checkbox" id="check_proxies" name="check_proxies" {% if params.check_proxies == 'True' %}checked{% endif %}>
-                        <label class="form-check-label" for="check_proxies">Check proxies before using them</label>
+                        <label class="form-check-label" for="check_proxies">{{ _("Check proxies before using them") }}</label>
                     </div>
                     <div class="mb-3">
-                        <label for="proxy_list" class="form-label">Proxy list</label>
+                        <label for="proxy_list" class="form-label">{{ _("Proxy list") }}</label>
                         <textarea class="form-control font-monospace" id="proxy_list" name="proxy_list" rows="3">{{ params.proxy_list }}</textarea>
-                        <div class="form-text">Separated by semicolons (;). Format: http://ip:port or ip:port.</div>
+                        <div class="form-text">{{ _("Separated by semicolons (;). Format: http://ip:port or ip:port.") }}</div>
                     </div>
                     <div>
-                        <label for="proxy_list_link" class="form-label">Proxy list link</label>
+                        <label for="proxy_list_link" class="form-label">{{ _("Proxy list link") }}</label>
                         <input type="text" class="form-control" id="proxy_list_link" name="proxy_list_link" value="{{ params.proxy_list_link }}">
-                        <div class="form-text">A URL returning one proxy per line.</div>
+                        <div class="form-text">{{ _("A URL returning one proxy per line.") }}</div>
                     </div>
                 </div>
 
                 <div class="panel">
-                    <h2 class="panel-title">Requests</h2>
+                    <h2 class="panel-title">{{ _("Requests") }}</h2>
                     <div class="mb-3">
-                        <label for="user_agents" class="form-label">User agents</label>
+                        <label for="user_agents" class="form-label">{{ _("User agents") }}</label>
                         <textarea class="form-control font-monospace" id="user_agents" name="user_agents" rows="5">{{ params.user_agents }}</textarea>
-                        <div class="form-text">JSON list of user agents used for HTTP requests.</div>
+                        <div class="form-text">{{ _("JSON list of user agents used for HTTP requests.") }}</div>
                     </div>
                     <div>
-                        <label for="default_headers" class="form-label">Default headers</label>
+                        <label for="default_headers" class="form-label">{{ _("Default headers") }}</label>
                         <textarea class="form-control font-monospace" id="default_headers" name="default_headers" rows="3">{{ params.default_headers }}</textarea>
-                        <div class="form-text">JSON object of headers sent with every request.</div>
+                        <div class="form-text">{{ _("JSON object of headers sent with every request.") }}</div>
                     </div>
                 </div>
             </section>
 
             <div class="savebar" id="savebar">
-                <span class="text-muted small">Changes apply after you save.</span>
-                <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i> Save configuration</button>
+                <span class="text-muted small">{{ _("Changes apply after you save.") }}</span>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i> {{ _("Save configuration") }}</button>
             </div>
         </form>
 
@@ -178,57 +196,57 @@
         <section class="pane" id="pane-security">
             <div class="panel">
                 <div class="panel-head">
-                    <h2 class="panel-title">Web interface password</h2>
-                    {% if password_env %}<span class="chip">Set by environment</span>
-                    {% elif password_set %}<span class="chip chip-ok"><i class="bi bi-lock-fill"></i> Protected</span>
-                    {% else %}<span class="chip chip-warn"><i class="bi bi-unlock-fill"></i> Open to anyone who can reach this port</span>{% endif %}
+                    <h2 class="panel-title">{{ _("Web interface password") }}</h2>
+                    {% if password_env %}<span class="chip">{{ _("Set by environment") }}</span>
+                    {% elif password_set %}<span class="chip chip-ok"><i class="bi bi-lock-fill"></i> {{ _("Protected") }}</span>
+                    {% else %}<span class="chip chip-warn"><i class="bi bi-unlock-fill"></i> {{ _("Open to anyone who can reach this port") }}</span>{% endif %}
                 </div>
 
                 {% if password_env %}
-                <p class="mb-0">The password comes from the <code>VN_WEB_PASSWORD</code> environment variable. Change or remove it there and restart the container.</p>
+                <p class="mb-0">{{ _("The password comes from the") }} <code>VN_WEB_PASSWORD</code>{{ _(" environment variable. Change or remove it there and restart the container.") }}</p>
                 {% else %}
-                <p class="text-muted">{% if password_set %}Change the password, or remove it to open the interface again.{% else %}Without a password, anyone who can open this page can change settings and delete data.{% endif %}</p>
+                <p class="text-muted">{% if password_set %}{{ _("Change the password, or remove it to open the interface again.") }}{% else %}{{ _("Without a password, anyone who can open this page can change settings and delete data.") }}{% endif %}</p>
                 <form action="/security/password" method="post" class="security-form">
                     {% if password_set %}
                     <div>
-                        <label for="current_password" class="form-label">Current password</label>
+                        <label for="current_password" class="form-label">{{ _("Current password") }}</label>
                         <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
                     </div>
                     {% endif %}
                     <div>
-                        <label for="new_password" class="form-label">{{ 'New password' if password_set else 'Password' }}</label>
+                        <label for="new_password" class="form-label">{{ _('New password') if password_set else _('Password') }}</label>
                         <input type="password" class="form-control" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
-                        <div class="form-text">At least {{ min_password_length }} characters.</div>
+                        <div class="form-text">{{ _("At least %(n)s characters.", n=min_password_length) }}</div>
                     </div>
                     <div>
-                        <label for="confirm_password" class="form-label">Repeat password</label>
+                        <label for="confirm_password" class="form-label">{{ _("Repeat password") }}</label>
                         <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
                     </div>
-                    <div><button type="submit" class="btn btn-primary">{{ 'Change password' if password_set else 'Set password' }}</button></div>
+                    <div><button type="submit" class="btn btn-primary">{{ _('Change password') if password_set else _('Set password') }}</button></div>
                 </form>
                 {% endif %}
             </div>
 
             {% if password_set and not password_env %}
             <div class="panel">
-                <h2 class="panel-title">Remove password</h2>
+                <h2 class="panel-title">{{ _("Remove password") }}</h2>
                 <form action="/security/password/remove" method="post" class="security-form">
                     <div>
-                        <label for="remove_current" class="form-label">Current password</label>
+                        <label for="remove_current" class="form-label">{{ _("Current password") }}</label>
                         <input type="password" class="form-control" id="remove_current" name="current_password" autocomplete="current-password" required>
                     </div>
-                    <div><button type="submit" class="btn btn-outline-danger">Remove password</button></div>
+                    <div><button type="submit" class="btn btn-outline-danger">{{ _("Remove password") }}</button></div>
                 </form>
             </div>
             {% endif %}
 
             <div class="panel">
-                <h2 class="panel-title">Good to know</h2>
+                <h2 class="panel-title">{{ _("Good to know") }}</h2>
                 <ul class="mb-0 text-muted">
-                    <li>Changing the password logs out every other browser.</li>
-                    <li>Five wrong attempts lock the login for a minute.</li>
-                    <li>Forgot it? Start the container with <code>VN_WEB_PASSWORD=your-new-password</code> to get back in, then set a new one here.</li>
-                    <li>Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.</li>
+                    <li>{{ _("Changing the password logs out every other browser.") }}</li>
+                    <li>{{ _("Five wrong attempts lock the login for a minute.") }}</li>
+                    <li>{{ _("Forgot it? Start the container with") }} <code>VN_WEB_PASSWORD=your-new-password</code> {{ _("to get back in, then set a new one here.") }}</li>
+                    <li>{{ _("Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.") }}</li>
                 </ul>
             </div>
         </section>
@@ -274,14 +292,14 @@
             close.type = 'button';
             close.className = 'btn-close';
             close.setAttribute('data-bs-dismiss', 'alert');
-            close.setAttribute('aria-label', 'Close');
+            close.setAttribute('aria-label', vnT('Close'));
             el.appendChild(close);
             document.querySelector('.flash-messages').appendChild(el);
             setTimeout(function () { bootstrap.Alert.getOrCreateInstance(el).close(); }, 5000);
         }
 
         function setButtons(process, running) {
-            document.querySelector('.process-status[data-process="' + process + '"]').textContent = running ? 'Running' : 'Stopped';
+            document.querySelector('.process-status[data-process="' + process + '"]').textContent = running ? vnT('Running') : vnT('Stopped');
             document.querySelector('.process-control[data-process="' + process + '"][data-action="start"]').style.display = running ? 'none' : '';
             document.querySelector('.process-control[data-process="' + process + '"][data-action="stop"]').style.display = running ? '' : 'none';
         }
@@ -295,7 +313,7 @@
                 })
                 .catch(function (error) {
                     console.error('Error:', error);
-                    document.querySelectorAll('.process-status').forEach(function (s) { s.textContent = 'Unknown'; });
+                    document.querySelectorAll('.process-status').forEach(function (s) { s.textContent = vnT('Unknown'); });
                 })
                 .finally(function () {
                     document.querySelectorAll('.process-control').forEach(function (b) { b.disabled = false; });
@@ -339,7 +357,7 @@
             const remove = document.createElement('button');
             remove.type = 'button';
             remove.className = 'chip-x';
-            remove.setAttribute('aria-label', 'Remove ' + word);
+            remove.setAttribute('aria-label', vnT('Remove %(name)s', {name: word}));
             remove.innerHTML = '<i class="bi bi-x-lg"></i>';
             remove.addEventListener('click', function () { tag.remove(); syncHidden(); });
             tag.appendChild(remove);

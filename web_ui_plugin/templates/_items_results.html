@@ -2,18 +2,18 @@
 
 <div class="results-head">
     <h2 class="results-title">
-        {% if selected_query %}{{ selected_query_display if selected_query_display else 'Query ' ~ selected_query }}{% else %}All items{% endif %}
+        {% if selected_query %}{{ selected_query_display if selected_query_display else _('Query %(id)s', id=selected_query) }}{% else %}{{ _("All items") }}{% endif %}
         <span class="results-range" aria-live="polite">
-            {% if total %}{{ first_shown }}&ndash;{{ last_shown }} of {{ total }}{% else %}0 results{% endif %}
+            {% if total %}{{ _("%(a)s–%(b)s of %(c)s", a=first_shown, b=last_shown, c=total) }}{% else %}{{ _("0 results") }}{% endif %}
         </span>
     </h2>
     <div class="results-actions">
-        <div class="btn-group" role="group" aria-label="View">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="cardViewBtn"><i class="bi bi-grid-fill me-1"></i> Cards</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="listViewBtn"><i class="bi bi-list-ul me-1"></i> List</button>
+        <div class="btn-group" role="group" aria-label="{{ _('View') }}">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="cardViewBtn"><i class="bi bi-grid-fill me-1"></i> {{ _("Cards") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="listViewBtn"><i class="bi bi-list-ul me-1"></i> {{ _("List") }}</button>
         </div>
         <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#clearModal">
-            <i class="bi bi-trash3 me-1"></i> Clear results
+            <i class="bi bi-trash3 me-1"></i> {{ _("Clear results") }}
         </button>
     </div>
 </div>
@@ -22,11 +22,11 @@
 <div class="empty">
     <i class="bi bi-bag"></i>
     {% if active_filters %}
-    <strong>No items match these filters</strong>
-    Loosen a filter or <a href="#" data-reset>reset all filters</a>.
+    <strong>{{ _("No items match these filters") }}</strong>
+    {{ _("Loosen a filter or") }} <a href="#" data-reset>{{ _("reset all filters") }}</a>.
     {% else %}
-    <strong>No items yet</strong>
-    New listings appear here as soon as one of your queries matches them.
+    <strong>{{ _("No items yet") }}</strong>
+    {{ _("New listings appear here as soon as one of your queries matches them.") }}
     {% endif %}
 </div>
 {% else %}
@@ -43,17 +43,17 @@
             <thead>
             <tr>
                 <th></th>
-                <th>Title</th>
-                <th>Price</th>
-                <th>Seller</th>
-                <th>Query</th>
-                <th title="When the scraper first saw the listing">First seen</th>
+                <th>{{ _("Title") }}</th>
+                <th>{{ _("Price") }}</th>
+                <th>{{ _("Seller") }}</th>
+                <th>{{ _("Query") }}</th>
+                <th title="{{ _('When the scraper first saw the listing') }}">{{ _("First seen") }}</th>
                 <th></th>
             </tr>
             </thead>
             <tbody>
             {% for item in items %}
-            <tr>
+            <tr data-id="{{ item.id }}">
                 <td style="width: 3.5rem;">
                     {% if item.photo_url %}
                     <img src="{{ item.photo_url }}" alt="" class="img-thumbnail" loading="lazy" style="width: 2.75rem; height: 2.75rem; object-fit: cover;">
@@ -62,11 +62,11 @@
                     {% endif %}
                 </td>
                 <td style="min-width: 12rem;">{{ item.title }}</td>
-                <td class="text-nowrap"><span class="price-chip">{{ item.price }} {{ item.currency }}</span>{% if item.deal_pct %} <span class="deal-pill" title="Average for this query: {{ item.avg_price }} {{ item.currency }}">&minus;{{ item.deal_pct }}%</span>{% endif %}</td>
+                <td class="text-nowrap"><span class="price-chip">{{ item.price }} {{ item.currency }}</span>{% if item.deal_pct %} <span class="deal-pill" title="{{ _('Average for this query: %(avg)s', avg=item.avg_price ~ ' ' ~ item.currency) }}">&minus;{{ item.deal_pct }}%</span>{% endif %}</td>
                 <td><div class="seller">{{ seller_info(item) }}</div></td>
                 <td>{{ item.query|truncate(28) }}</td>
                 <td class="text-nowrap"><time class="local-ts" data-ts="{{ item.ts }}">{{ item.timestamp }}</time></td>
-                <td class="text-end"><a href="{{ item.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open <i class="bi bi-box-arrow-up-right"></i></a></td>
+                <td class="text-end"><a href="{{ item.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">{{ _("Open") }} <i class="bi bi-box-arrow-up-right"></i></a></td>
             </tr>
             {% endfor %}
             </tbody>
@@ -75,13 +75,13 @@
 </div>
 
 {% if pages > 1 %}
-<nav class="pager" aria-label="Pages">
-    <button type="button" data-page="{{ page - 1 }}" {% if page <= 1 %}disabled{% endif %} aria-label="Previous page"><i class="bi bi-chevron-left"></i></button>
+<nav class="pager" aria-label="{{ _('Pages') }}">
+    <button type="button" data-page="{{ page - 1 }}" {% if page <= 1 %}disabled{% endif %} aria-label="{{ _('Previous page') }}"><i class="bi bi-chevron-left"></i></button>
     {% for n in page_window %}
     {% if n is none %}<span class="gap">&hellip;</span>
     {% else %}<button type="button" data-page="{{ n }}" class="{{ 'active' if n == page }}" {% if n == page %}aria-current="page"{% endif %}>{{ n }}</button>{% endif %}
     {% endfor %}
-    <button type="button" data-page="{{ page + 1 }}" {% if page >= pages %}disabled{% endif %} aria-label="Next page"><i class="bi bi-chevron-right"></i></button>
+    <button type="button" data-page="{{ page + 1 }}" {% if page >= pages %}disabled{% endif %} aria-label="{{ _('Next page') }}"><i class="bi bi-chevron-right"></i></button>
 </nav>
 {% endif %}
 {% endif %}

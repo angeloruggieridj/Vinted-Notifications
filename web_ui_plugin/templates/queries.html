@@ -1,47 +1,45 @@
 {% extends "base.html" %}
 
-{% block title %}Queries - Vinted Notifications{% endblock %}
+{% block title %}{{ _("Queries - Vinted Notifications") }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
-    <h1 class="h2">Queries</h1>
+    <h1 class="h2">{{ _("Queries") }}</h1>
     <button type="button" class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newQuery"
             aria-expanded="{{ 'true' if not queries else 'false' }}" aria-controls="newQuery">
-        <i class="bi bi-plus-lg me-1"></i> New query
+        <i class="bi bi-plus-lg me-1"></i> {{ _("New query") }}
     </button>
 </div>
 
 <div class="collapse {% if not queries %}show{% endif %}" id="newQuery">
     <form action="/add_query" method="post" class="panel query-form">
         <div class="mb-3">
-            <label for="query" class="form-label">Vinted search URL</label>
-            <input type="url" class="form-control" id="query" name="query" required
-                   placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes"
-                   pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
-            <div class="form-text">Run the search on Vinted with your filters, then paste the page address here.</div>
+            <label for="query" class="form-label">{{ _("Vinted search URL") }}</label>
+            {{ _("<input type=\"url\" class=\"form-control\" id=\"query\" name=\"query\" required placeholder=\"https://www.vinted.fr/catalog?search_text=nike+shoes\" pattern=\"^https?:\\/\\/(?:www\\.)?vinted\\.[a-z]{2,}(?:\\.[a-z]{2,})*(\\/.*)?$\">") }}
+            <div class="form-text">{{ _("Run the search on Vinted with your filters, then paste the page address here.") }}</div>
         </div>
         <div class="query-fields">
             <div>
-                <label for="query_name" class="form-label">Name</label>
-                <input type="text" class="form-control" id="query_name" name="query_name" placeholder="Optional">
+                <label for="query_name" class="form-label">{{ _("Name") }}</label>
+                <input type="text" class="form-control" id="query_name" name="query_name" placeholder="{{ _('Optional') }}">
             </div>
             <div>
-                <label for="max_price" class="form-label">Max price</label>
-                <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" placeholder="No limit">
+                <label for="max_price" class="form-label">{{ _("Max price") }}</label>
+                <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" placeholder="{{ _('No limit') }}">
             </div>
             <div>
-                <label for="min_stars" class="form-label">Min seller stars</label>
-                <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" placeholder="Any">
+                <label for="min_stars" class="form-label">{{ _("Min seller stars") }}</label>
+                <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" placeholder="{{ _('Any') }}">
             </div>
             <div>
-                <label for="min_reviews" class="form-label">Min seller reviews</label>
-                <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" placeholder="Any">
+                <label for="min_reviews" class="form-label">{{ _("Min seller reviews") }}</label>
+                <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" placeholder="{{ _('Any') }}">
             </div>
             <div class="align-self-end">
-                <button type="submit" class="btn btn-primary w-100">Add query</button>
+                <button type="submit" class="btn btn-primary w-100">{{ _("Add query") }}</button>
             </div>
         </div>
-        <div class="form-text mt-2">Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.</div>
+        <div class="form-text mt-2">{{ _("Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.") }}</div>
     </form>
 </div>
 
@@ -52,21 +50,21 @@
             <h2 class="qname">{{ query.display }}</h2>
             <a class="qurl" href="{{ query.query }}" target="_blank" rel="noopener" title="{{ query.query }}">{{ query.query|replace('https://', '')|truncate(70) }} <i class="bi bi-box-arrow-up-right"></i></a>
             <div class="qchips">
-                {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> up to {{ query.max_price }}</span>{% endif %}
-                {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ query.min_stars }}+ stars</span>{% endif %}
-                {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ query.min_reviews }}+ reviews</span>{% endif %}
-                {% if not (query.max_price or query.min_stars or query.min_reviews) %}<span class="chip chip-empty">No filters</span>{% endif %}
+                {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> {{ _("up to %(price)s", price=query.max_price) }}</span>{% endif %}
+                {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ _("%(n)s+ stars", n=query.min_stars) }}</span>{% endif %}
+                {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ _("%(n)s+ reviews", n=query.min_reviews) }}</span>{% endif %}
+                {% if not (query.max_price or query.min_stars or query.min_reviews) %}<span class="chip chip-empty">{{ _("No filters") }}</span>{% endif %}
             </div>
         </div>
         <dl class="qstats">
-            <div><dt>Items</dt><dd>{{ query.item_count }}</dd></div>
-            <div><dt>Average price</dt><dd>{{ query.avg_price if query.avg_price else '-' }}</dd></div>
-            <div><dt>Last found</dt><dd>{% if query.last_ts %}<time class="local-ts" data-rel="1" data-ts="{{ query.last_ts }}">{{ query.last_found_item }}</time>{% else %}Never{% endif %}</dd></div>
+            <div><dt>{{ _("Items") }}</dt><dd>{{ query.item_count }}</dd></div>
+            <div><dt>{{ _("Average price") }}</dt><dd>{{ query.avg_price if query.avg_price else '-' }}</dd></div>
+            <div><dt>{{ _("Last found") }}</dt><dd>{% if query.last_ts %}<time class="local-ts" data-rel="1" data-ts="{{ query.last_ts }}">{{ query.last_found_item }}</time>{% else %}{{ _("Never") }}{% endif %}</dd></div>
         </dl>
         <div class="qactions">
-            <a href="/items?query={{ query.query_id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-bag me-1"></i> Items</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ query.id }}"><i class="bi bi-pencil me-1"></i> Edit</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ query.id }}" aria-label="Remove {{ query.display }}"><i class="bi bi-trash3"></i></button>
+            <a href="/items?query={{ query.query_id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-bag me-1"></i> {{ _("Items") }}</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ query.id }}"><i class="bi bi-pencil me-1"></i> {{ _("Edit") }}</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ query.id }}" aria-label="{{ _('Remove %(name)s', name=query.display) }}"><i class="bi bi-trash3"></i></button>
         </div>
 
         <!-- Edit modal -->
@@ -74,37 +72,37 @@
             <div class="modal-dialog modal-dialog-centered">
                 <form class="modal-content" action="/update_query/{{ query.query_id }}" method="post">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="editModalLabel{{ query.id }}">Edit query</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <h5 class="modal-title" id="editModalLabel{{ query.id }}">{{ _("Edit query") }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
-                            <label for="query{{ query.id }}" class="form-label">Vinted search URL</label>
+                            <label for="query{{ query.id }}" class="form-label">{{ _("Vinted search URL") }}</label>
                             <input type="url" class="form-control" id="query{{ query.id }}" name="query" value="{{ query.query }}" required
                                    pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
                         </div>
                         <div class="mb-3">
-                            <label for="query_name{{ query.id }}" class="form-label">Name</label>
-                            <input type="text" class="form-control" id="query_name{{ query.id }}" name="query_name" value="{{ query.name }}" placeholder="Optional">
+                            <label for="query_name{{ query.id }}" class="form-label">{{ _("Name") }}</label>
+                            <input type="text" class="form-control" id="query_name{{ query.id }}" name="query_name" value="{{ query.name }}" placeholder="{{ _('Optional') }}">
                         </div>
                         <div class="row g-3">
                             <div class="col-4">
-                                <label for="max_price{{ query.id }}" class="form-label">Max price</label>
-                                <input type="number" class="form-control" id="max_price{{ query.id }}" name="max_price" min="0" step="any" value="{{ query.max_price }}" placeholder="No limit">
+                                <label for="max_price{{ query.id }}" class="form-label">{{ _("Max price") }}</label>
+                                <input type="number" class="form-control" id="max_price{{ query.id }}" name="max_price" min="0" step="any" value="{{ query.max_price }}" placeholder="{{ _('No limit') }}">
                             </div>
                             <div class="col-4">
-                                <label for="min_stars{{ query.id }}" class="form-label">Min stars</label>
-                                <input type="number" class="form-control" id="min_stars{{ query.id }}" name="min_stars" min="0" max="5" step="0.1" value="{{ query.min_stars }}" placeholder="Any">
+                                <label for="min_stars{{ query.id }}" class="form-label">{{ _("Min stars") }}</label>
+                                <input type="number" class="form-control" id="min_stars{{ query.id }}" name="min_stars" min="0" max="5" step="0.1" value="{{ query.min_stars }}" placeholder="{{ _('Any') }}">
                             </div>
                             <div class="col-4">
-                                <label for="min_reviews{{ query.id }}" class="form-label">Min reviews</label>
-                                <input type="number" class="form-control" id="min_reviews{{ query.id }}" name="min_reviews" min="0" step="1" value="{{ query.min_reviews }}" placeholder="Any">
+                                <label for="min_reviews{{ query.id }}" class="form-label">{{ _("Min reviews") }}</label>
+                                <input type="number" class="form-control" id="min_reviews{{ query.id }}" name="min_reviews" min="0" step="1" value="{{ query.min_reviews }}" placeholder="{{ _('Any') }}">
                             </div>
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save changes</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
+                        <button type="submit" class="btn btn-primary">{{ _("Save changes") }}</button>
                     </div>
                 </form>
             </div>
@@ -115,16 +113,16 @@
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title" id="deleteModalLabel{{ query.id }}">Remove query</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <h5 class="modal-title" id="deleteModalLabel{{ query.id }}">{{ _("Remove query") }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
                     </div>
                     <div class="modal-body">
-                        Remove <strong>{{ query.display }}</strong> and the {{ query.item_count }} item{{ '' if query.item_count == 1 else 's' }} it collected?
+                        {{ _("Remove %(name)s and the %(items)s it collected?", name=("<strong>"|safe ~ query.display ~ "</strong>"|safe), items=_n("%(n)s item", "%(n)s items", query.item_count)) }}
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
                         <form action="/remove_query/{{ query.query_id }}" method="post" class="d-inline">
-                            <button type="submit" class="btn btn-danger">Remove query</button>
+                            <button type="submit" class="btn btn-danger">{{ _("Remove query") }}</button>
                         </form>
                     </div>
                 </div>
@@ -134,8 +132,8 @@
     {% else %}
     <div class="empty panel">
         <i class="bi bi-search"></i>
-        <strong>No queries yet</strong>
-        Paste a Vinted search URL above and new listings will start showing up here.
+        <strong>{{ _("No queries yet") }}</strong>
+        {{ _("Paste a Vinted search URL above and new listings will start showing up here.") }}
     </div>
     {% endfor %}
 </div>
@@ -143,21 +141,21 @@
 {% if queries %}
 <div class="danger-zone">
     <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
-        <i class="bi bi-trash3 me-1"></i> Remove all queries
+        <i class="bi bi-trash3 me-1"></i> {{ _("Remove all queries") }}
     </button>
 </div>
 <div class="modal fade" id="deleteAllModal" tabindex="-1" aria-labelledby="deleteAllModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="deleteAllModalLabel">Remove all queries</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" id="deleteAllModalLabel">{{ _("Remove all queries") }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
             </div>
-            <div class="modal-body">This removes <strong>every</strong> query and all collected items. It cannot be undone.</div>
+            <div class="modal-body">{{ _("This removes every query and all collected items. It cannot be undone.") }}</div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
                 <form action="/remove_query/all" method="post" class="d-inline">
-                    <button type="submit" class="btn btn-danger">Remove everything</button>
+                    <button type="submit" class="btn btn-danger">{{ _("Remove everything") }}</button>
                 </form>
             </div>
         </div>

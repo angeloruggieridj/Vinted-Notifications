@@ -1,27 +1,27 @@
 {% extends "base.html" %}
 
-{% block title %}Items - Vinted Notifications{% endblock %}
+{% block title %}{{ _("Items - Vinted Notifications") }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap align-items-center">
-    <h1 class="h2">Items</h1>
+    <h1 class="h2">{{ _("Items") }}</h1>
 </div>
 
 <!-- Live bar: auto-refresh progress and manual refresh -->
-<div class="live-bar" id="liveBar" data-enabled="{{ 1 if autorefresh_enabled else 0 }}" data-interval="{{ autorefresh_interval }}">
+<div class="live-bar" id="liveBar" data-notice="{{ 1 if new_items_notice else 0 }}" data-enabled="{{ 1 if autorefresh_enabled else 0 }}" data-interval="{{ autorefresh_interval }}">
     <div class="live-state">
         {% if autorefresh_enabled %}
         <div class="live-row">
-            <span><span class="live-dot"></span>Auto-refresh every {{ autorefresh_interval }}s</span>
-            <span>Next refresh in <strong id="autoRefreshCountdown">{{ autorefresh_interval }}</strong>s</span>
+            <span><span class="live-dot"></span>{{ _("Auto-refresh every %(n)ss", n=autorefresh_interval) }}</span>
+            <span>{{ _("Next refresh in") }} <strong id="autoRefreshCountdown">{{ autorefresh_interval }}</strong>{{ _("s") }}</span>
         </div>
         <div class="progress"><div class="progress-bar" id="autoRefreshBar" role="progressbar" style="width: 0%"
                                    aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
         {% else %}
-        <span><span class="live-dot off"></span>Auto-refresh is off. <a href="/config">Turn it on in Configuration</a></span>
+        <span><span class="live-dot off"></span>{{ _("Auto-refresh is off.") }} <a href="/config">{{ _("Turn it on in Configuration") }}</a></span>
         {% endif %}
     </div>
-    <button type="button" class="btn btn-primary" id="refreshNow" aria-label="Refresh now"><i class="bi bi-arrow-clockwise me-1"></i><span class="d-none d-sm-inline">Refresh now</span></button>
+    <button type="button" class="btn btn-primary" id="refreshNow" aria-label="{{ _('Refresh now') }}"><i class="bi bi-arrow-clockwise me-1"></i><span class="d-none d-sm-inline">{{ _("Refresh now") }}</span></button>
 </div>
 
 <form action="/items" method="get" id="filterForm" class="filters" autocomplete="off">
@@ -29,74 +29,74 @@
     <div class="filters-main">
         <div class="search-wrap">
             <i class="bi bi-search"></i>
-            <input type="search" class="form-control" id="q" name="q" value="{{ f.q }}" placeholder="Search titles" aria-label="Search titles">
+            <input type="search" class="form-control" id="q" name="q" value="{{ f.q }}" placeholder="{{ _('Search titles') }}" aria-label="{{ _('Search titles') }}">
         </div>
-        <select class="form-select" id="query" name="query" aria-label="Query">
-            <option value="">All queries</option>
+        <select class="form-select" id="query" name="query" aria-label="{{ _('Query') }}">
+            <option value="">{{ _("All queries") }}</option>
             {% for query in queries %}
             <option value="{{ query.query_id }}" {% if selected_query == query.query_id|string %}selected{% endif %}>{{ query.display }}</option>
             {% endfor %}
         </select>
-        <select class="form-select" id="sort" name="sort" aria-label="Sort by">
-            <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>Newest first</option>
-            <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>Oldest first</option>
-            <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>Price: low to high</option>
-            <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>Price: high to low</option>
-            <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>Seller stars</option>
-            <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>Seller reviews</option>
+        <select class="form-select" id="sort" name="sort" aria-label="{{ _('Sort by') }}">
+            <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>{{ _("Newest first") }}</option>
+            <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>{{ _("Oldest first") }}</option>
+            <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>{{ _("Price: low to high") }}</option>
+            <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>{{ _("Price: high to low") }}</option>
+            <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>{{ _("Seller stars") }}</option>
+            <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>{{ _("Seller reviews") }}</option>
         </select>
-        <select class="form-select" id="per_page" name="per_page" aria-label="Items per page">
+        <select class="form-select" id="per_page" name="per_page" aria-label="{{ _('Items per page') }}">
             {% for n in page_sizes %}
-            <option value="{{ n }}" {% if f.per_page == n %}selected{% endif %}>{{ n }} per page</option>
+            <option value="{{ n }}" {% if f.per_page == n %}selected{% endif %}>{{ _("%(n)s per page", n=n) }}</option>
             {% endfor %}
         </select>
         <div class="filters-actions">
             <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-expanded="false" aria-controls="moreFilters">
-                <i class="bi bi-sliders2 me-1"></i> More<span class="count-pill" id="activeCount" {% if not active_filters %}hidden{% endif %}>{{ active_filters }}</span>
+                <i class="bi bi-sliders2 me-1"></i> {{ _("More") }}<span class="count-pill" id="activeCount" {% if not active_filters %}hidden{% endif %}>{{ active_filters }}</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary" id="resetFilters" title="Reset all filters"><i class="bi bi-x-lg"></i> Reset</button>
+            <button type="button" class="btn btn-outline-secondary" id="resetFilters" title="{{ _('Reset all filters') }}"><i class="bi bi-x-lg"></i> {{ _("Reset") }}</button>
         </div>
     </div>
     <div class="collapse {% if f.period or f.seller or f.min_price or f.max_price or f.min_stars or f.min_reviews or f.deals %}show{% endif %}" id="moreFilters">
         <div class="filters-more">
             <div class="grid">
                 <div>
-                    <label for="period" class="form-label">Found in</label>
+                    <label for="period" class="form-label">{{ _("Found in") }}</label>
                     <select class="form-select" id="period" name="period">
-                        <option value="">Any time</option>
-                        <option value="1h" {% if f.period == '1h' %}selected{% endif %}>Last hour</option>
-                        <option value="6h" {% if f.period == '6h' %}selected{% endif %}>Last 6 hours</option>
-                        <option value="24h" {% if f.period == '24h' %}selected{% endif %}>Last 24 hours</option>
-                        <option value="7d" {% if f.period == '7d' %}selected{% endif %}>Last 7 days</option>
-                        <option value="30d" {% if f.period == '30d' %}selected{% endif %}>Last 30 days</option>
+                        <option value="">{{ _("Any time") }}</option>
+                        <option value="1h" {% if f.period == '1h' %}selected{% endif %}>{{ _("Last hour") }}</option>
+                        <option value="6h" {% if f.period == '6h' %}selected{% endif %}>{{ _("Last 6 hours") }}</option>
+                        <option value="24h" {% if f.period == '24h' %}selected{% endif %}>{{ _("Last 24 hours") }}</option>
+                        <option value="7d" {% if f.period == '7d' %}selected{% endif %}>{{ _("Last 7 days") }}</option>
+                        <option value="30d" {% if f.period == '30d' %}selected{% endif %}>{{ _("Last 30 days") }}</option>
                     </select>
                 </div>
                 <div>
-                    <label for="seller" class="form-label">Seller name</label>
+                    <label for="seller" class="form-label">{{ _("Seller name") }}</label>
                     <input type="search" class="form-control" id="seller" name="seller" value="{{ f.seller }}">
                 </div>
                 <div>
-                    <label for="min_price" class="form-label">Min price</label>
+                    <label for="min_price" class="form-label">{{ _("Min price") }}</label>
                     <input type="number" class="form-control" id="min_price" name="min_price" min="0" step="any" value="{{ f.min_price }}">
                 </div>
                 <div>
-                    <label for="max_price" class="form-label">Max price</label>
+                    <label for="max_price" class="form-label">{{ _("Max price") }}</label>
                     <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" value="{{ f.max_price }}">
                 </div>
                 <div>
-                    <label for="min_stars" class="form-label">Min seller stars</label>
+                    <label for="min_stars" class="form-label">{{ _("Min seller stars") }}</label>
                     <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" value="{{ f.min_stars }}">
                 </div>
                 <div>
-                    <label for="min_reviews" class="form-label">Min seller reviews</label>
+                    <label for="min_reviews" class="form-label">{{ _("Min seller reviews") }}</label>
                     <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" value="{{ f.min_reviews }}">
                 </div>
                 <div class="deal-switch">
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="deals" name="deals" value="1" {% if f.deals %}checked{% endif %}>
-                        <label class="form-check-label" for="deals">Only {{ deal_percent }}%+ below average</label>
+                        <label class="form-check-label" for="deals">{{ _("Only %(n)s%%+ below average", n=deal_percent) }}</label>
                     </div>
-                    <small class="text-muted">Compared with the average price of the same query</small>
+                    <small class="text-muted">{{ _("Compared with the average price of the same query") }}</small>
                 </div>
             </div>
         </div>
@@ -107,26 +107,38 @@
     {% include "_items_results.html" %}
 </div>
 
+<!-- New items box: shown after a refresh brings in listings you have not seen yet -->
+<div class="new-box" id="newBox" role="status" aria-live="polite" hidden>
+    <div class="new-thumbs" id="newThumbs"></div>
+    <div class="new-text">
+        <strong id="newTitle"></strong>
+        <span id="newSub"></span>
+    </div>
+    <button type="button" class="btn btn-sm btn-primary" id="newShow">{{ _("Show") }}</button>
+    <button type="button" class="new-close" id="newClose" aria-label="{{ _('Dismiss') }}"><i class="bi bi-x-lg"></i></button>
+    <div class="new-timer"></div>
+</div>
+
 <!-- Clear results -->
 <div class="modal fade" id="clearModal" tabindex="-1" aria-labelledby="clearModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title" id="clearModalLabel">Clear collected items</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <h5 class="modal-title" id="clearModalLabel">{{ _("Clear collected items") }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
             </div>
             <div class="modal-body">
-                <p class="mb-2">This permanently deletes the items stored so far. Your queries are not touched.</p>
-                <p class="text-muted small mb-0">The next check records the listings that already exist without sending notifications, so you are not flooded with old items.</p>
+                <p class="mb-2">{{ _("This permanently deletes the items stored so far. Your queries are not touched.") }}</p>
+                <p class="text-muted small mb-0">{{ _("The next check records the listings that already exist without sending notifications, so you are not flooded with old items.") }}</p>
             </div>
             <div class="modal-footer flex-wrap">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
                 <form action="/items/clear" method="post" id="clearQueryForm" hidden>
                     <input type="hidden" name="query_id" id="clearQueryId">
-                    <button type="submit" class="btn btn-outline-danger">Delete only <span id="clearQueryName"></span></button>
+                    <button type="submit" class="btn btn-outline-danger">{{ _("Delete only") }} <span id="clearQueryName"></span></button>
                 </form>
                 <form action="/items/clear" method="post">
-                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash3 me-1"></i> Delete all items</button>
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash3 me-1"></i> {{ _("Delete all items") }}</button>
                 </form>
             </div>
         </div>
@@ -178,7 +190,70 @@
             pill.hidden = n === 0;
         }
 
-        async function refreshResults() {
+        // ---- "New items" box ----
+        const newBox = document.getElementById('newBox');
+        const noticeOn = liveBar.dataset.notice === '1';
+        let knownIds = null;      // ids on screen after the previous update
+        let hideTimer = null;
+
+        function idsOnScreen() {
+            return new Set(Array.from(results.querySelectorAll('.deal[data-id]')).map(function (el) { return el.dataset.id; }));
+        }
+
+        function hideNewBox() {
+            newBox.hidden = true;
+            clearTimeout(hideTimer);
+        }
+
+        function showNewBox(cards, overflow) {
+            const thumbs = document.getElementById('newThumbs');
+            thumbs.replaceChildren();
+            cards.slice(0, 3).forEach(function (card) {
+                const src = card.querySelector('.deal-photo img');
+                const thumb = document.createElement(src ? 'img' : 'span');
+                if (src) { thumb.src = src.src; thumb.alt = ''; } else { thumb.className = 'ph'; }
+                thumbs.appendChild(thumb);
+            });
+            const n = cards.length;
+            document.getElementById('newTitle').textContent = overflow
+                ? vnT('%(n)s+ new items', {n: n})
+                : vnT(n === 1 ? '%(n)s new item' : '%(n)s new items', {n: n});
+            const first = cards[0];
+            const price = first.querySelector('.price-tag');
+            document.getElementById('newSub').textContent =
+                first.querySelector('.deal-title').textContent.trim() + (price ? ' \u00b7 ' + price.textContent.trim() : '');
+            newBox.hidden = false;
+            // restart the dismiss countdown animation
+            const timer = newBox.querySelector('.new-timer');
+            timer.style.animation = 'none';
+            void timer.offsetWidth;
+            timer.style.animation = '';
+            clearTimeout(hideTimer);
+            hideTimer = setTimeout(hideNewBox, 10000);
+            newBox.dataset.target = first.dataset.id;
+        }
+
+        function announceNewItems() {
+            const current = idsOnScreen();
+            if (knownIds !== null) {
+                const fresh = Array.from(results.querySelectorAll('.deal[data-id]'))
+                    .filter(function (el) { return !knownIds.has(el.dataset.id); });
+                fresh.forEach(function (el) { el.classList.add('is-new'); });
+                if (noticeOn && fresh.length) showNewBox(fresh, current.size > 0 && fresh.length >= current.size);
+            }
+            knownIds = current;
+        }
+
+        document.getElementById('newClose').addEventListener('click', hideNewBox);
+        newBox.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
+        newBox.addEventListener('mouseleave', function () { hideTimer = setTimeout(hideNewBox, 4000); });
+        document.getElementById('newShow').addEventListener('click', function () {
+            const card = results.querySelector('.deal[data-id="' + newBox.dataset.target + '"]');
+            hideNewBox();
+            if (card) card.scrollIntoView({behavior: 'smooth', block: 'center'});
+        });
+
+        async function refreshResults(notify) {
             const qs = currentParams().toString();
             history.replaceState(null, '', '/items' + (qs ? '?' + qs : ''));
             updateActiveCount();
@@ -196,6 +271,8 @@
                 pageInput.value = shown ? shown.dataset.page : '1';
                 applyView();
                 localizeTimes();
+                // Only refreshes (timer or button) announce new items; changing a filter just resets the baseline
+                if (notify === true) announceNewItems(); else knownIds = idsOnScreen();
             } catch (err) {
                 if (err.name !== 'AbortError') console.error('Items refresh failed', err);
             } finally {
@@ -273,7 +350,7 @@
         let elapsed = 0;
         refreshBtn.addEventListener('click', function () {
             elapsed = 0;
-            refreshResults();
+            refreshResults(true);
         });
         if (liveBar.dataset.enabled === '1') {
             const intervalMs = parseInt(liveBar.dataset.interval, 10) * 1000;
@@ -291,13 +368,14 @@
                 countdown.textContent = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
                 if (elapsed >= intervalMs) {
                     elapsed = 0;
-                    refreshResults();
+                    refreshResults(true);
                 }
             }, 250);
         }
 
         applyView();
         localizeTimes();
+        knownIds = idsOnScreen();
     });
 </script>
 {% endblock %}
