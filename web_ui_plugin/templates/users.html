@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _("Accounts") }} - Vinted Notifications{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
+    <h1 class="h2">{{ _("Accounts") }}</h1>
+    <button type="button" class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newUser" aria-expanded="false" aria-controls="newUser">
+        <i class="bi bi-person-plus me-1"></i> {{ _("New account") }}
+    </button>
+</div>
+
+<div class="collapse" id="newUser">
+    <form action="/users/create" method="post" class="panel query-form">
+        <div class="query-fields user-fields">
+            <div>
+                <label for="new_username" class="form-label">{{ _("Username") }}</label>
+                <input type="text" class="form-control" id="new_username" name="username" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="off" autocapitalize="none" required>
+            </div>
+            <div>
+                <label for="new_user_password" class="form-label">{{ _("Password") }}</label>
+                <input type="password" class="form-control" id="new_user_password" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+            </div>
+            <div>
+                <label for="new_role" class="form-label">{{ _("Role") }}</label>
+                <select class="form-select" id="new_role" name="role">
+                    <option value="user">{{ _("Member") }}</option>
+                    <option value="admin">{{ _("Administrator") }}</option>
+                </select>
+            </div>
+            <div class="align-self-end">
+                <button type="submit" class="btn btn-primary w-100">{{ _("Create account") }}</button>
+            </div>
+        </div>
+        <div class="form-text mt-2">{{ _("Members have their own queries, items, notifications and settings. Administrators also manage the server and the accounts.") }}</div>
+    </form>
+</div>
+
+<div class="qlist">
+    {% for user in users %}
+    <article class="qcard">
+        <div class="qmain">
+            <h2 class="qname d-flex align-items-center gap-2">
+                <span class="avatar">{{ user.username[:1]|upper }}</span>
+                {{ user.username }}
+                {% if user.id == current_user.id %}<span class="chip">{{ _("You") }}</span>{% endif %}
+            </h2>
+            <div class="qchips">
+                <span class="chip {% if user.role == 'admin' %}chip-ok{% endif %}">{{ _("Administrator") if user.role == 'admin' else _("Member") }}</span>
+                {% if user.disabled %}<span class="chip chip-warn">{{ _("Disabled") }}</span>{% endif %}
+                <span class="chip chip-empty">{{ _("Created") }} {{ user.created[:10] }}</span>
+            </div>
+        </div>
+        <dl class="qstats">
+            <div><dt>{{ _("Queries") }}</dt><dd>{{ user.query_count }}</dd></div>
+            <div><dt>{{ _("Items") }}</dt><dd>{{ user.item_count }}</dd></div>
+        </dl>
+        <div class="qactions">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#userModal{{ user.id }}"><i class="bi bi-three-dots me-1"></i> {{ _("Manage") }}</button>
+        </div>
+
+        <div class="modal fade" id="userModal{{ user.id }}" tabindex="-1" aria-labelledby="userModalLabel{{ user.id }}" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="sheet-grabber" aria-hidden="true"></div>
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="userModalLabel{{ user.id }}">{{ user.username }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form action="/users/{{ user.id }}/update" method="post" class="d-flex gap-2 align-items-end mb-4">
+                            <input type="hidden" name="action" value="role">
+                            <div class="flex-grow-1">
+                                <label for="role{{ user.id }}" class="form-label">{{ _("Role") }}</label>
+                                <select class="form-select" id="role{{ user.id }}" name="role">
+                                    <option value="user" {% if user.role != 'admin' %}selected{% endif %}>{{ _("Member") }}</option>
+                                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>{{ _("Administrator") }}</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-outline-primary">{{ _("Save changes") }}</button>
+                        </form>
+
+                        <form action="/users/{{ user.id }}/update" method="post" class="d-flex gap-2 align-items-end mb-4">
+                            <input type="hidden" name="action" value="password">
+                            <div class="flex-grow-1">
+                                <label for="pw{{ user.id }}" class="form-label">{{ _("New password") }}</label>
+                                <input type="password" class="form-control" id="pw{{ user.id }}" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                            </div>
+                            <button type="submit" class="btn btn-outline-primary">{{ _("Reset password") }}</button>
+                        </form>
+
+                        <div class="d-flex flex-wrap gap-2">
+                            {% if user.id != current_user.id %}
+                            <form action="/users/{{ user.id }}/update" method="post">
+                                <input type="hidden" name="action" value="disable">
+                                <button type="submit" class="btn btn-outline-secondary">{{ _("Enable account") if user.disabled else _("Disable account") }}</button>
+                            </form>
+                            <form action="/users/{{ user.id }}/delete" method="post" onsubmit='return confirm({{ _("Delete this account with all its queries and items?")|tojson }});'>
+                                <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash3 me-1"></i> {{ _("Delete account") }}</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+{% endblock %}

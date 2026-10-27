@@ -199,6 +199,23 @@ Queries must be added with a whole link. It works with filters.:
 The RSS feed provides an alternative way to receive notifications. After enabling it in the Web UI, access it
 at [http://localhost:8080](http://localhost:8080).
 
+## 👥 Multiple users (shared server)
+
+By default the web interface is a single-user tool. To share one server between several people, go to
+**Configuration → Security → Multiple accounts** and create the first administrator. Everything that
+exists at that point (queries, items, allowlist, settings) moves to that account, and from then on
+everyone signs in.
+
+- Every account has its **own queries, items, allowlist, language/timezone, banned words, message template,
+  Telegram bot (token + chat ID) and private RSS feed** (`/feed/<token>`).
+- Administrators also manage the server-wide settings (refresh delay, proxies, RSS port...), the accounts and the logs.
+  Identical searches from different accounts are fetched from Vinted only once.
+- Administrators create accounts from **Accounts**; they can also allow self-service sign-up in Configuration → Server.
+- Environment variables: `VN_WEB_PASSWORD` (single password before accounts exist; afterwards a recovery password that
+  signs in any administrator), `VN_COOKIE_SECURE=1` (serve cookies over HTTPS only) and `VN_TRUST_PROXY=1` (trust
+  `X-Forwarded-*` headers when running behind a reverse proxy).
+- Serve the interface over HTTPS when it is reachable from the Internet.
+
 ## ⚙️ Advanced Configuration
 
 ### Proxy Support

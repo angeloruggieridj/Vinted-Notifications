@@ -3,59 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
     <title>{% block title %}Vinted Notifications{% endblock %}</title>
 
     <!-- Progressive web app -->
     <link rel="manifest" href="/manifest.webmanifest">
-    <meta name="theme-color" content="#0F2B30">
+    <meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Vinted">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.3/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/bricolage-grotesque@5.1.0/index.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body>
-<aside class="rail" id="rail">
-    <a class="rail-brand" href="/">
-        <span class="rail-logo"><i class="bi bi-bell-fill"></i></span>
+{% set path = request.path %}
+<aside class="sidebar glass" id="sidebar">
+    <a class="sidebar-brand" href="/">
+        <img src="{{ url_for('static', filename='icons/favicon-32.png') }}" alt="" width="32" height="32">
         <span>Vinted<br>Notifications</span>
     </a>
-    <nav class="rail-nav" aria-label="{{ _('Main') }}">
-        <a class="rail-link {% if request.path == '/' %}active{% endif %}" href="/"><i class="bi bi-speedometer2"></i> {{ _("Dashboard") }}</a>
-        <a class="rail-link {% if request.path == '/queries' %}active{% endif %}" href="/queries"><i class="bi bi-search"></i> {{ _("Queries") }}</a>
-        <a class="rail-link {% if request.path.startswith('/items') %}active{% endif %}" href="/items"><i class="bi bi-bag"></i> {{ _("Items") }}</a>
-        <a class="rail-link {% if request.path == '/allowlist' %}active{% endif %}" href="/allowlist"><i class="bi bi-globe2"></i> {{ _("Allowlist") }}</a>
-        <a class="rail-link {% if request.path == '/config' %}active{% endif %}" href="/config"><i class="bi bi-sliders"></i> {{ _("Configuration") }}</a>
-        <a class="rail-link {% if request.path == '/logs' %}active{% endif %}" href="/logs"><i class="bi bi-journal-text"></i> {{ _("Logs") }}</a>
+    <nav class="sidebar-nav" aria-label="{{ _('Main') }}">
+        <a class="side-link {% if path == '/' %}active{% endif %}" href="/"><i class="bi bi-house-door"></i> {{ _("Dashboard") }}</a>
+        <a class="side-link {% if path == '/queries' %}active{% endif %}" href="/queries"><i class="bi bi-search"></i> {{ _("Queries") }}</a>
+        <a class="side-link {% if path.startswith('/items') %}active{% endif %}" href="/items"><i class="bi bi-bag"></i> {{ _("Items") }}</a>
+        <a class="side-link {% if path == '/allowlist' %}active{% endif %}" href="/allowlist"><i class="bi bi-globe2"></i> {{ _("Allowlist") }}</a>
+        <a class="side-link {% if path == '/config' %}active{% endif %}" href="/config"><i class="bi bi-gear"></i> {{ _("Configuration") }}</a>
+        {% if is_admin and accounts_enabled %}<a class="side-link {% if path.startswith('/users') %}active{% endif %}" href="/users"><i class="bi bi-people"></i> {{ _("Accounts") }}</a>{% endif %}
+        {% if is_admin %}<a class="side-link {% if path == '/logs' %}active{% endif %}" href="/logs"><i class="bi bi-terminal"></i> {{ _("Logs") }}</a>{% endif %}
     </nav>
-    <div class="rail-foot">
-        {% if is_up_to_date is defined %}
-        {% if is_up_to_date %}
-        <span class="rail-version"><i class="bi bi-check-circle-fill text-success"></i> v{{ current_version }}</span>
-        {% else %}
-        <a class="rail-version rail-update" href="{{ github_url }}/releases" target="_blank" rel="noopener">
-            <i class="bi bi-arrow-up-circle-fill"></i> {{ _('Update %(v)s', v=latest_version) }}</a>
-        {% endif %}
-        {% endif %}
+    <div class="sidebar-foot">
+        <a class="side-account" href="/config#security" title="{{ _('Account') if accounts_enabled else _('Security') }}">
+            <span class="avatar">{{ (current_user.username[:1] if current_user and current_user.username else 'V')|upper }}</span>
+            <span class="side-account-text">
+                <strong>{{ current_user.username if current_user and current_user.username else 'Vinted' }}</strong>
+                <small>
+                    {% if accounts_enabled %}{{ _("Administrator") if is_admin else _("Member") }}
+                    {% elif is_up_to_date is defined and not is_up_to_date %}{{ _('Update %(v)s', v=latest_version) }}
+                    {% elif current_version is defined %}v{{ current_version }}{% endif %}
+                </small>
+            </span>
+        </a>
         {% if auth_enabled %}
-        <form action="/logout" method="post" class="d-inline"><button type="submit" class="rail-gh rail-logout" title="{{ _('Log out') }}" aria-label="{{ _('Log out') }}"><i class="bi bi-box-arrow-right"></i></button></form>
+        <form action="/logout" method="post"><button type="submit" class="icon-btn" title="{{ _('Log out') }}" aria-label="{{ _('Log out') }}"><i class="bi bi-box-arrow-right"></i></button></form>
         {% endif %}
     </div>
 </aside>
-<div class="rail-backdrop" id="railBackdrop"></div>
 
 <div class="shell">
-    <header class="topbar">
-        <button class="topbar-toggle" type="button" id="railToggle" aria-label="{{ _('Toggle navigation') }}" aria-controls="rail">
-            <i class="bi bi-list"></i>
-        </button>
-        <span class="topbar-title"><i class="bi bi-bell-fill me-2"></i>Vinted Notifications</span>
+    <header class="appbar glass" id="appbar">
+        <span class="appbar-title" id="appbarTitle">Vinted Notifications</span>
     </header>
 
     <main class="page">
@@ -64,17 +67,14 @@
 
     <footer class="page-foot">
         <div class="foot-id">
-            <span class="foot-logo"><i class="bi bi-bell-fill"></i></span>
-            <div>
-                <strong>Vinted Notifications</strong>
-                <span class="foot-meta">
-                    {% if current_version is defined %}v{{ current_version }}{% endif %}
-                    {% if is_up_to_date is defined %}
-                    {% if is_up_to_date %}<span class="chip chip-ok">{{ _("Up to date") }}</span>
-                    {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener">{{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
-                    {% endif %}
-                </span>
-            </div>
+            <strong>Vinted Notifications</strong>
+            <span class="foot-meta">
+                {% if current_version is defined %}v{{ current_version }}{% endif %}
+                {% if is_up_to_date is defined %}
+                {% if is_up_to_date %}<span class="chip chip-ok">{{ _("Up to date") }}</span>
+                {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener">{{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
+                {% endif %}
+            </span>
         </div>
         <nav class="foot-links" aria-label="{{ _('Links') }}">
             {% if github_url is defined %}
@@ -82,9 +82,47 @@
             <a href="{{ github_url }}/issues" target="_blank" rel="noopener"><i class="bi bi-bug"></i> {{ _("Report an issue") }}</a>
             <a href="{{ github_url }}" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
             {% endif %}
-            <button type="button" class="foot-install" id="installApp" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
+            <button type="button" class="foot-install js-install" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
         </nav>
     </footer>
+</div>
+
+<!-- Tab bar (phones and tablets) -->
+<nav class="tabbar glass" aria-label="{{ _('Main') }}">
+    <a class="tab {% if path == '/' %}active{% endif %}" href="/"><i class="bi bi-house-door"></i><span>{{ _("Dashboard") }}</span></a>
+    <a class="tab {% if path.startswith('/items') %}active{% endif %}" href="/items"><i class="bi bi-bag"></i><span>{{ _("Items") }}</span></a>
+    <a class="tab {% if path == '/queries' %}active{% endif %}" href="/queries"><i class="bi bi-search"></i><span>{{ _("Queries") }}</span></a>
+    <a class="tab {% if path == '/config' %}active{% endif %}" href="/config"><i class="bi bi-gear"></i><span>{{ _("Settings") }}</span></a>
+    <button type="button" class="tab {% if path in ('/allowlist', '/logs') or path.startswith('/users') %}active{% endif %}" data-bs-toggle="modal" data-bs-target="#moreSheet"><i class="bi bi-three-dots"></i><span>{{ _("More") }}</span></button>
+</nav>
+
+<!-- "More" sheet -->
+<div class="modal fade sheet" id="moreSheet" tabindex="-1" aria-label="{{ _('More') }}" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="sheet-grabber" aria-hidden="true"></div>
+            <div class="sheet-head">
+                <span class="avatar avatar-lg">{{ (current_user.username[:1] if current_user and current_user.username else 'V')|upper }}</span>
+                <div>
+                    <strong>{{ current_user.username if current_user and current_user.username else 'Vinted Notifications' }}</strong>
+                    <small class="d-block text-muted">{% if accounts_enabled %}{{ _("Administrator") if is_admin else _("Member") }}{% elif current_version is defined %}v{{ current_version }}{% endif %}</small>
+                </div>
+                <button type="button" class="icon-btn ms-auto" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"><i class="bi bi-x-lg"></i></button>
+            </div>
+            <div class="list-group-ios">
+                <a href="/allowlist" class="list-row"><i class="bi bi-globe2"></i><span>{{ _("Allowlist") }}</span><i class="bi bi-chevron-right chev"></i></a>
+                {% if is_admin and accounts_enabled %}<a href="/users" class="list-row"><i class="bi bi-people"></i><span>{{ _("Accounts") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
+                {% if is_admin %}<a href="/logs" class="list-row"><i class="bi bi-terminal"></i><span>{{ _("Logs") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
+                <a href="/config#security" class="list-row"><i class="bi bi-person-circle"></i><span>{{ _("Account") if accounts_enabled else _("Security") }}</span><i class="bi bi-chevron-right chev"></i></a>
+                <button type="button" class="list-row js-install" hidden><i class="bi bi-phone"></i><span>{{ _("Install app") }}</span></button>
+            </div>
+            {% if auth_enabled %}
+            <form action="/logout" method="post" class="list-group-ios">
+                <button type="submit" class="list-row text-danger"><i class="bi bi-box-arrow-right"></i><span>{{ _("Log out") }}</span></button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
 </div>
 
 <div class="flash-messages">
@@ -156,39 +194,45 @@
             });
         }, 5000);
 
-        // Mobile navigation
-        const rail = document.getElementById('rail');
-        document.getElementById('railToggle').addEventListener('click', function () {
-            rail.classList.toggle('open');
-        });
-        const closeRail = function () { rail.classList.remove('open'); };
-        document.getElementById('railBackdrop').addEventListener('click', closeRail);
-        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeRail(); });
+        // iOS-style large title: the bar shows the page title once the big one scrolls away
+        const heading = document.querySelector('.page h1');
+        const appbar = document.getElementById('appbar');
+        if (heading && 'IntersectionObserver' in window) {
+            document.getElementById('appbarTitle').textContent = heading.textContent.trim();
+            new IntersectionObserver(function (entries) {
+                appbar.classList.toggle('titled', !entries[0].isIntersecting);
+            }, {rootMargin: '-60px 0px 0px 0px'}).observe(heading);
+        }
     });
 
-    // ---- Progressive web app: service worker and "Install app" button ----
+    // ---- Progressive web app: service worker and "Install app" buttons ----
     if ('serviceWorker' in navigator) {
         window.addEventListener('load', function () {
             navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(function () {});
         });
     }
     let vnInstallPrompt = null;
+    function vnShowInstall(visible) {
+        document.querySelectorAll('.js-install').forEach(function (b) { b.hidden = !visible; });
+    }
     window.addEventListener('beforeinstallprompt', function (e) {
         e.preventDefault();
         vnInstallPrompt = e;
-        document.getElementById('installApp').hidden = false;
+        vnShowInstall(true);
     });
     window.addEventListener('appinstalled', function () {
         vnInstallPrompt = null;
-        document.getElementById('installApp').hidden = true;
+        vnShowInstall(false);
     });
     document.addEventListener('DOMContentLoaded', function () {
-        document.getElementById('installApp').addEventListener('click', function () {
-            if (!vnInstallPrompt) return;
-            vnInstallPrompt.prompt();
-            vnInstallPrompt.userChoice.finally(function () {
-                vnInstallPrompt = null;
-                document.getElementById('installApp').hidden = true;
+        document.querySelectorAll('.js-install').forEach(function (button) {
+            button.addEventListener('click', function () {
+                if (!vnInstallPrompt) return;
+                vnInstallPrompt.prompt();
+                vnInstallPrompt.userChoice.finally(function () {
+                    vnInstallPrompt = null;
+                    vnShowInstall(false);
+                });
             });
         });
     });

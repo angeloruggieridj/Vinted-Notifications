@@ -1,4 +1,5 @@
 import db
+import re
 import time
 import requests
 from pyVintedVN import Vinted, requester
@@ -14,7 +15,9 @@ logger = get_logger(__name__)
 MAX_NOTIFICATIONS_PER_RUN = 10
 
 
-def process_query(query, name=None, min_stars=None, min_reviews=None, max_price=None):
+def process_query(
+    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0
+):
     """
     Process a Vinted query URL by:
     1. Checking if the URL is a brand URL and converting it to standard format if needed
@@ -31,6 +34,7 @@ def process_query(query, name=None, min_stars=None, min_reviews=None, max_price=
         min_stars (float, optional): Minimum seller rating (0-5 stars) required for items to be returned.
         min_reviews (int, optional): Minimum number of seller reviews required for items to be returned.
         max_price (float, optional): Maximum price; more expensive items are skipped.
+        user_id (int): The account the query belongs to (0 before accounts exist).
 
     Returns:
         tuple: (message, is_new_query)
@@ -84,22 +88,24 @@ def process_query(query, name=None, min_stars=None, min_reviews=None, max_price=
     )
 
     # Some queries are made with filters only, so we need to check if the search_text is present
-    if db.is_query_in_db(processed_query) is True:
+    if db.is_query_in_db(processed_query, user_id) is True:
         return "Query already exists.", False
     else:
         # add the query to the db
-        db.add_query_to_db(processed_query, name, min_stars, min_reviews, max_price)
+        db.add_query_to_db(
+            processed_query, name, min_stars, min_reviews, max_price, user_id
+        )
         return "Query added.", True
 
 
-def get_formatted_query_list():
+def get_formatted_query_list(user_id=0):
     """
     Get a formatted list of all queries in the database.
 
     Returns:
         str: A formatted string with all queries, numbered
     """
-    all_queries = db.get_queries()
+    all_queries = db.get_queries(user_id)
     queries_keywords = []
     for query in all_queries:
         parsed_url = urlparse(query[1])
@@ -124,7 +130,7 @@ def get_formatted_query_list():
     return query_list
 
 
-def process_remove_query(number):
+def process_remove_query(number, user_id=0):
     """
     Process the removal of a query from the database.
 
@@ -137,20 +143,21 @@ def process_remove_query(number):
             - success (bool): True if query was removed successfully
     """
     if number == "all":
-        db.remove_all_queries_from_db()
+        db.remove_all_queries_from_db(user_id)
         return "All queries removed.", True
 
     # Check if number is a valid digit
     if number.isdigit():
         # Remove the query from the database
-        db.remove_query_from_db(number)
-        return "Query removed.", True
+        if db.remove_query_from_db(number, user_id):
+            return "Query removed.", True
+        return "Query not found.", False
     else:
         return "Invalid number.", False
 
 
 def process_update_query(
-    query_id, query, name, min_stars=None, min_reviews=None, max_price=None
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0
 ):
     """
     Process the update of a query in the database.
@@ -192,14 +199,14 @@ def process_update_query(
 
     # Update the query in the database
     if db.update_query_in_db(
-        query_id, processed_query, name, min_stars, min_reviews, max_price
+        query_id, processed_query, name, min_stars, min_reviews, max_price, user_id
     ):
         return "Query updated.", True
     else:
         return "Failed to update query.", False
 
 
-def process_add_country(country):
+def process_add_country(country, user_id=0):
     """
     Process the addition of a country to the allowlist.
 
@@ -213,7 +220,7 @@ def process_add_country(country):
     """
     # Format the country code (remove spaces)
     country = country.replace(" ", "")
-    country_list = db.get_allowlist()
+    country_list = db.get_allowlist(user_id)
 
     # Validate the country code (check if it's 2 characters long)
     if len(country) != 2:
@@ -225,11 +232,11 @@ def process_add_country(country):
         return f'Country "{country.upper()}" already in allowlist.', country_list
 
     # Add the country to the allowlist
-    db.add_to_allowlist(country.upper())
-    return "Country added.", db.get_allowlist()
+    db.add_to_allowlist(country.upper(), user_id)
+    return "Country added.", db.get_allowlist(user_id)
 
 
-def process_remove_country(country):
+def process_remove_country(country, user_id=0):
     """
     Process the removal of a country from the allowlist.
 
@@ -246,11 +253,15 @@ def process_remove_country(country):
 
     # Validate the country code (check if it's 2 characters long)
     if len(country) != 2:
-        return "Invalid country code", db.get_allowlist()
+        return "Invalid country code", db.get_allowlist(user_id)
 
     # Remove the country from the allowlist
-    db.remove_from_allowlist(country.upper())
-    return "Country removed.", db.get_allowlist()
+    db.remove_from_allowlist(country.upper(), user_id)
+    return "Country removed.", db.get_allowlist(user_id)
+
+
+_user_country_cache = {}
+COUNTRY_CACHE_TTL = 24 * 3600
 
 
 def get_user_country(profile_id):
@@ -266,6 +277,9 @@ def get_user_country(profile_id):
     Returns:
         str: The user's country code (2-letter ISO code) or "XX" if it can't be determined
     """
+    cached = _user_country_cache.get(profile_id)
+    if cached and time.time() - cached[0] < COUNTRY_CACHE_TTL:
+        return cached[1]
     # Users are shared between all Vinted platforms, so we can use whatever locale we want
     url = f"https://www.vinted.fr/api/v2/users/{profile_id}?localize=false"
     response = requester.get(url)
@@ -284,6 +298,8 @@ def get_user_country(profile_id):
             user_country = "XX"
     else:
         user_country = response.json()["user"]["country_iso_code"]
+    if user_country != "XX":
+        _user_country_cache[profile_id] = (time.time(), user_country)
     return user_country
 
 
@@ -343,6 +359,10 @@ def process_items(queue):
     """
 
     all_queries = db.get_queries()
+    # Several accounts often watch the same search: scrape each distinct URL once
+    by_url = {}
+    for query in all_queries:
+        by_url.setdefault(query[1], []).append(query[0])
 
     # Initialize Vinted
     vinted = Vinted()
@@ -350,13 +370,13 @@ def process_items(queue):
     # Get the number of items per query from the database
     items_per_query = int(db.get_parameter("items_per_query"))
 
-    # for each keyword we parse data
-    for query in all_queries:
-        all_items = vinted.items.search(query[1], nbr_items=items_per_query)
+    for url, query_ids in by_url.items():
+        all_items = vinted.items.search(url, nbr_items=items_per_query)
         # Filter to only include new items. This should reduce the amount of db calls.
         data = [item for item in all_items if item.is_new_item()]
-        queue.put((data, query[0]))
-        logger.info(f"Scraped {len(data)} items for query: {query[1]}")
+        for query_id in query_ids:
+            queue.put((data, query_id))
+        logger.info(f"Scraped {len(data)} items for query: {url} ({len(query_ids)} subscriber(s))")
 
 
 def clear_item_queue(items_queue, new_items_queue):
@@ -366,7 +386,11 @@ def clear_item_queue(items_queue, new_items_queue):
     """
     if not items_queue.empty():
         data, query_id = items_queue.get()
-        banwords_str = db.get_parameter("banwords")
+        owner = db.get_query_owner(query_id)
+        if owner is None:  # the query was removed while its items were in flight
+            return
+        banwords_str = db.get_user_setting(owner, "banwords")
+        allowlist = db.get_allowlist(owner)
 
         # Read the watermark once, before the loop. It doubles as the "has this query
         # ever produced anything?" flag, and the updates made below would otherwise
@@ -397,15 +421,15 @@ def clear_item_queue(items_queue, new_items_queue):
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
             # In case of multiple queries, we need to check if the item is already in the db
-            if db.is_item_in_db_by_id(item.id) is True:
+            if db.is_item_in_db_by_id(item.id, owner) is True:
                 # We update the timestamp
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
             # If there's an allowlist and
             # If the user's country is not in the allowlist, we just update the timestamp
-            if db.get_allowlist() != 0 and (
+            if allowlist != 0 and (
                 get_user_country(item.raw_data["user"]["id"])
-            ) not in (db.get_allowlist() + ["XX"]):
+            ) not in (allowlist + ["XX"]):
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
             # Check if the item title contains any banwords
@@ -446,6 +470,7 @@ def clear_item_queue(items_queue, new_items_queue):
                 seller_login=seller.get("login"),
                 seller_stars=stars,
                 seller_reviews=reviews,
+                user_id=owner,
             )
 
         if is_first_run:
@@ -463,16 +488,29 @@ def clear_item_queue(items_queue, new_items_queue):
 
         for item in to_notify:
             # We create the message
-            message_template = db.get_parameter("message_template")
-            content = message_template.format(
+            content = render_message(
+                db.get_user_setting(owner, "message_template") or "",
                 title=item.title,
                 price=str(item.price) + " " + item.currency,
                 brand=item.brand_title,
-                image=None if item.photo is None else item.photo,
+                image=item.photo,
             )
             # add the item to the queue
-            new_items_queue.put((content, item.url, "Open Vinted", None, None))
-            # new_items_queue.put((content, item.url, "Open Vinted", item.buy_url, "Open buy page"))
+            # (account, message, link, link text, buy link, buy text)
+            new_items_queue.put((owner, content, item.url, "Open Vinted", None, None))
+
+
+_PLACEHOLDER = re.compile(r"\{(title|price|brand|image)\}")
+
+
+def render_message(template, **values):
+    """
+    Fill {title}, {price}, {brand} and {image} in a user-written template.
+
+    Only these four placeholders are substituted: str.format() would let a template read
+    attributes of the values, which isn't something an account should be able to do.
+    """
+    return _PLACEHOLDER.sub(lambda m: str(values.get(m.group(1)) or ""), template)
 
 
 def contains_banwords(title, banwords_str):

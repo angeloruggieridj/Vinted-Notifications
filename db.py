@@ -49,6 +49,33 @@ def ensure_schema():
         ):
             if col not in item_cols:
                 conn.execute(f"ALTER TABLE items ADD COLUMN {col} {col_type}")
+        # Accounts and per-user data. user_id 0 is the implicit owner while no account exists.
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                disabled INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id INTEGER NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY (user_id, key)
+            );
+            """
+        )
+        for table in ("queries", "items", "allowlist"):
+            table_cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+            if "user_id" not in table_cols:
+                conn.execute(
+                    f"ALTER TABLE {table} ADD COLUMN user_id INTEGER NOT NULL DEFAULT 0"
+                )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queries_user ON queries (user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_user ON items (user_id, item)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_items_query ON items (query_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_items_timestamp ON items (timestamp)")
         conn.commit()
@@ -79,15 +106,15 @@ def get_query_filters(query_id):
             conn.close()
 
 
-def is_item_in_db_by_id(id):
+def is_item_in_db_by_id(id, user_id):
+    """Has this user already been given this listing?"""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT() FROM items WHERE item=?", (id,))
-        if cursor.fetchone()[0]:
-            return True
-        return False
+        row = conn.execute(
+            "SELECT COUNT() FROM items WHERE item=? AND user_id=?", (id, user_id)
+        ).fetchone()
+        return bool(row[0])
     except Exception:
         print_exc()
     finally:
@@ -141,6 +168,7 @@ def add_item_to_db(
     seller_login=None,
     seller_stars=None,
     seller_reviews=None,
+    user_id=0,
 ):
     conn = None
     try:
@@ -149,7 +177,7 @@ def add_item_to_db(
         # Insert into db the id and the query_id related to the item
         cursor.execute(
             "INSERT INTO items (item, title, price, currency, timestamp, photo_url, query_id, "
-            "seller_id, seller_login, seller_stars, seller_reviews) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "seller_id, seller_login, seller_stars, seller_reviews, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 id,
                 title,
@@ -162,6 +190,7 @@ def add_item_to_db(
                 seller_login,
                 seller_stars,
                 seller_reviews,
+                user_id,
             ),
         )
         # Update the last item for the query
@@ -176,29 +205,50 @@ def add_item_to_db(
             conn.close()
 
 
-def get_queries():
+def get_queries(user_id=None):
+    """
+    Queries as (id, url, last_item, name, min_stars, min_reviews, max_price, user_id).
+    user_id=None returns every user's queries (used by the scraper).
+    """
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, query, last_item, query_name, min_stars, min_reviews, max_price FROM queries")
-        return cursor.fetchall()
+        sql = "SELECT id, query, last_item, query_name, min_stars, min_reviews, max_price, user_id FROM queries"
+        if user_id is None:
+            return conn.execute(sql + " ORDER BY id").fetchall()
+        return conn.execute(sql + " WHERE user_id=? ORDER BY id", (user_id,)).fetchall()
     except Exception:
         print_exc()
+        return []
     finally:
         if conn:
             conn.close()
 
 
-def get_queries_overview():
-    """Queries with their filters plus how many items they collected and the average price."""
+def get_query_owner(query_id):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute("SELECT user_id FROM queries WHERE id=?", (query_id,)).fetchone()
+        return row[0] if row else None
+    except Exception:
+        print_exc()
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_queries_overview(user_id):
+    """A user's queries with their filters plus collected-item count and average price."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         return conn.execute(
             "SELECT q.id, q.query, q.query_name, q.last_item, q.min_stars, q.min_reviews, q.max_price, "
             "COUNT(i.item), AVG(i.price) FROM queries q LEFT JOIN items i ON i.query_id = q.id "
-            "GROUP BY q.id ORDER BY q.id"
+            "WHERE q.user_id = ? GROUP BY q.id ORDER BY q.id",
+            (user_id,),
         ).fetchall()
     except Exception:
         print_exc()
@@ -208,19 +258,15 @@ def get_queries_overview():
             conn.close()
 
 
-def is_query_in_db(processed_query):
+def is_query_in_db(processed_query, user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        # replace spaces in searched_text by % to match any query containing the searched text
-
-        cursor.execute(
-            "SELECT COUNT() FROM queries WHERE query = ?", (processed_query,)
-        )
-        if cursor.fetchone()[0]:
-            return True
-        return False
+        row = conn.execute(
+            "SELECT COUNT() FROM queries WHERE query = ? AND user_id = ?",
+            (processed_query, user_id),
+        ).fetchone()
+        return bool(row[0])
     except Exception:
         print_exc()
         return False
@@ -230,15 +276,15 @@ def is_query_in_db(processed_query):
 
 
 def add_query_to_db(
-    query, name=None, min_stars=None, min_reviews=None, max_price=None
+    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0
 ):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews, max_price) VALUES (?, NULL, ?, ?, ?, ?)",
-            (query, name or None, min_stars, min_reviews, max_price),
+        conn.execute(
+            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews, max_price, user_id) "
+            "VALUES (?, NULL, ?, ?, ?, ?, ?)",
+            (query, name or None, min_stars, min_reviews, max_price, user_id),
         )
         conn.commit()
     except Exception:
@@ -248,17 +294,16 @@ def add_query_to_db(
             conn.close()
 
 
-def get_query_id_by_rowid(rowid):
+def get_query_id_by_rowid(rowid, user_id):
+    """Id of the user's Nth query (as numbered in the Telegram query list)."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        query = f"SELECT id FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY ROWID) rn FROM queries) t WHERE rn={rowid}"
-        cursor.execute(query)
-        result = cursor.fetchone()
-        if result:
-            return result[0]
-        return None
+        row = conn.execute(
+            "SELECT id FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY ROWID) rn FROM queries WHERE user_id=?) t WHERE rn=?",
+            (user_id, int(rowid)),
+        ).fetchone()
+        return row[0] if row else None
     except Exception:
         print_exc()
         return None
@@ -267,32 +312,31 @@ def get_query_id_by_rowid(rowid):
             conn.close()
 
 
-def remove_query_from_db(query_number):
+def remove_query_from_db(query_number, user_id):
+    """Delete one of the user's queries and its items. Returns True if it existed."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        # Delete items associated with this query using query_id
-        cursor.execute("DELETE FROM items WHERE query_id=?", (query_number,))
-        # Delete the query
-        cursor.execute("DELETE FROM queries WHERE id=?", (query_number,))
+        conn.execute("DELETE FROM items WHERE query_id=? AND user_id=?", (query_number, user_id))
+        deleted = conn.execute(
+            "DELETE FROM queries WHERE id=? AND user_id=?", (query_number, user_id)
+        ).rowcount
         conn.commit()
+        return deleted > 0
     except Exception:
         print_exc()
+        return False
     finally:
         if conn:
             conn.close()
 
 
-def remove_all_queries_from_db():
+def remove_all_queries_from_db(user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        # Delete all items first to maintain foreign key integrity
-        cursor.execute("DELETE FROM items")
-        # Then delete all queries
-        cursor.execute("DELETE FROM queries")
+        conn.execute("DELETE FROM items WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM queries WHERE user_id=?", (user_id,))
         conn.commit()
     except Exception:
         print_exc()
@@ -302,7 +346,7 @@ def remove_all_queries_from_db():
 
 
 def update_query_in_db(
-    query_id, query, name, min_stars=None, min_reviews=None, max_price=None
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0
 ):
     """
     Update an existing query in the database.
@@ -322,12 +366,12 @@ def update_query_in_db(
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=?, max_price=? WHERE id=?",
-            (query, name, min_stars, min_reviews, max_price, query_id),
-        )
+        updated = cursor.execute(
+            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=?, max_price=? WHERE id=? AND user_id=?",
+            (query, name, min_stars, min_reviews, max_price, query_id, user_id),
+        ).rowcount
         conn.commit()
-        return True
+        return updated > 0
     except Exception:
         print_exc()
         return False
@@ -336,12 +380,11 @@ def update_query_in_db(
             conn.close()
 
 
-def add_to_allowlist(country):
+def add_to_allowlist(country, user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO allowlist VALUES (?)", (country,))
+        conn.execute("INSERT INTO allowlist (country, user_id) VALUES (?, ?)", (country, user_id))
         conn.commit()
     except Exception:
         print_exc()
@@ -350,12 +393,11 @@ def add_to_allowlist(country):
             conn.close()
 
 
-def remove_from_allowlist(country):
+def remove_from_allowlist(country, user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM allowlist WHERE country=?", (country,))
+        conn.execute("DELETE FROM allowlist WHERE country=? AND user_id=?", (country, user_id))
         conn.commit()
     except Exception:
         print_exc()
@@ -364,29 +406,24 @@ def remove_from_allowlist(country):
             conn.close()
 
 
-def get_allowlist():
+def get_allowlist(user_id):
+    """The user's allowed countries, or 0 when the allowlist is empty (everything allowed)."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM allowlist")
-        # Get list of countries
-        countries = [country[0] for country in cursor.fetchall()]
-        # Return 0 if there are no countries in the allowlist
-        if not countries:
-            return 0
-        return countries
+        rows = conn.execute("SELECT country FROM allowlist WHERE user_id=?", (user_id,)).fetchall()
+        countries = [row[0] for row in rows]
+        return countries or 0
     finally:
         if conn:
             conn.close()
 
 
-def clear_allowlist():
+def clear_allowlist(user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM allowlist")
+        conn.execute("DELETE FROM allowlist WHERE user_id=?", (user_id,))
         conn.commit()
     except Exception:
         print_exc()
@@ -464,7 +501,7 @@ def _escape_like(value):
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def clear_items(query_id=None):
+def clear_items(user_id, query_id=None):
     """
     Delete stored items, either all of them or only those of one query.
 
@@ -480,12 +517,14 @@ def clear_items(query_id=None):
         conn = get_db_connection()
         if query_id:
             deleted = conn.execute(
-                "DELETE FROM items WHERE query_id=?", (query_id,)
+                "DELETE FROM items WHERE query_id=? AND user_id=?", (query_id, user_id)
             ).rowcount
-            conn.execute("UPDATE queries SET last_item=NULL WHERE id=?", (query_id,))
+            conn.execute(
+                "UPDATE queries SET last_item=NULL WHERE id=? AND user_id=?", (query_id, user_id)
+            )
         else:
-            deleted = conn.execute("DELETE FROM items").rowcount
-            conn.execute("UPDATE queries SET last_item=NULL")
+            deleted = conn.execute("DELETE FROM items WHERE user_id=?", (user_id,)).rowcount
+            conn.execute("UPDATE queries SET last_item=NULL WHERE user_id=?", (user_id,))
         conn.commit()
         return deleted
     except Exception:
@@ -497,6 +536,7 @@ def clear_items(query_id=None):
 
 
 def search_items(
+    user_id,
     limit=50,
     query_id=None,
     text=None,
@@ -521,7 +561,7 @@ def search_items(
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        where, params = [], []
+        where, params = ["i.user_id = ?"], [user_id]
         if query_id:
             where.append("i.query_id = ?")
             params.append(query_id)
@@ -574,13 +614,11 @@ def search_items(
             conn.close()
 
 
-def get_total_items_count():
+def get_total_items_count(user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM items")
-        return cursor.fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM items WHERE user_id=?", (user_id,)).fetchone()[0]
     except Exception:
         print_exc()
         return 0
@@ -589,13 +627,11 @@ def get_total_items_count():
             conn.close()
 
 
-def get_total_queries_count():
+def get_total_queries_count(user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM queries")
-        return cursor.fetchone()[0]
+        return conn.execute("SELECT COUNT(*) FROM queries WHERE user_id=?", (user_id,)).fetchone()[0]
     except Exception:
         print_exc()
         return 0
@@ -604,38 +640,235 @@ def get_total_queries_count():
             conn.close()
 
 
-def get_items_per_day():
+def get_items_per_day(user_id):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        # Get total items
-        cursor.execute("SELECT COUNT(*) FROM items")
-        total_items = cursor.fetchone()[0]
-
-        if total_items == 0:
+        total_items, first, last = conn.execute(
+            "SELECT COUNT(*), MIN(timestamp), MAX(timestamp) FROM items WHERE user_id=?", (user_id,)
+        ).fetchone()
+        if not total_items:
             return 0
-
-        # Get earliest and latest timestamps
-        cursor.execute("SELECT MIN(timestamp), MAX(timestamp) FROM items")
-        min_timestamp, max_timestamp = cursor.fetchone()
-
-        # Calculate number of days (add 1 to include both start and end days)
         import datetime
 
-        min_date = datetime.datetime.fromtimestamp(min_timestamp).date()
-        max_date = datetime.datetime.fromtimestamp(max_timestamp).date()
-        days_diff = (max_date - min_date).days + 1
-
-        # Ensure at least 1 day to avoid division by zero
-        days_diff = max(1, days_diff)
-
-        # Calculate items per day
-        return round(total_items / days_diff, 1)
+        days = (
+            datetime.datetime.fromtimestamp(last).date()
+            - datetime.datetime.fromtimestamp(first).date()
+        ).days + 1
+        return round(total_items / max(1, days), 1)
     except Exception:
         print_exc()
         return 0
     finally:
         if conn:
             conn.close()
+
+
+# ---------------------------------------------------------------------------------------
+# Accounts and per-user settings
+# ---------------------------------------------------------------------------------------
+
+# Settings every user owns. When a user has not set one, the server-wide parameter of the
+# same name (edited by an administrator) is the default.
+USER_SETTING_KEYS = (
+    "language",
+    "timezone",
+    "items_autorefresh",
+    "new_items_notice",
+    "banwords",
+    "message_template",
+    "telegram_enabled",
+    "telegram_token",
+    "telegram_chat_id",
+    "rss_enabled",
+    "feed_token",
+)
+
+
+def _fetchall(sql, params=()):
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn.execute(sql, params).fetchall()
+    except Exception:
+        print_exc()
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def _execute(sql, params=()):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute(sql, params)
+        conn.commit()
+        return cursor.lastrowid, cursor.rowcount
+    except Exception:
+        print_exc()
+        return None, 0
+    finally:
+        if conn:
+            conn.close()
+
+
+def count_users():
+    rows = _fetchall("SELECT COUNT(*) AS n FROM users")
+    return rows[0]["n"] if rows else 0
+
+
+def get_user(user_id):
+    rows = _fetchall("SELECT * FROM users WHERE id=?", (user_id,))
+    return dict(rows[0]) if rows else None
+
+
+def get_user_by_name(username):
+    rows = _fetchall("SELECT * FROM users WHERE username=?", (username,))
+    return dict(rows[0]) if rows else None
+
+
+def list_users():
+    """Users with how much data each owns."""
+    rows = _fetchall(
+        "SELECT u.*, "
+        "(SELECT COUNT(*) FROM queries q WHERE q.user_id = u.id) AS query_count, "
+        "(SELECT COUNT(*) FROM items i WHERE i.user_id = u.id) AS item_count "
+        "FROM users u ORDER BY u.id"
+    )
+    return [dict(row) for row in rows]
+
+
+def create_user(username, password_hash, role="user"):
+    """Returns the new user's id, or None if the name is taken."""
+    import time
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.execute(
+            "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
+            (username, password_hash, role, int(time.time())),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        return None
+    except Exception:
+        print_exc()
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
+def update_user(user_id, **fields):
+    """Update password_hash, role or disabled."""
+    allowed = {"password_hash", "role", "disabled"}
+    fields = {k: v for k, v in fields.items() if k in allowed}
+    if not fields:
+        return
+    assignments = ", ".join(f"{k}=?" for k in fields)
+    _execute(f"UPDATE users SET {assignments} WHERE id=?", (*fields.values(), user_id))
+
+
+def count_admins(exclude_id=None):
+    rows = _fetchall(
+        "SELECT COUNT(*) AS n FROM users WHERE role='admin' AND disabled=0 AND id != ?",
+        (exclude_id or -1,),
+    )
+    return rows[0]["n"] if rows else 0
+
+
+def delete_user(user_id):
+    """Remove an account together with its queries, items, allowlist and settings."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        for table in ("items", "queries", "allowlist", "user_settings"):
+            conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.commit()
+    except Exception:
+        print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+def adopt_unowned_data(user_id):
+    """
+    Give everything created before accounts existed (owner 0) to `user_id`: queries, items,
+    allowlist and the settings that were being used.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        for table in ("queries", "items", "allowlist", "user_settings"):
+            conn.execute(f"UPDATE {table} SET user_id=? WHERE user_id=0", (user_id,))
+        conn.commit()
+    except Exception:
+        print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_user_setting(user_id, key, default=None):
+    """A user's setting, falling back to the server-wide parameter and then `default`."""
+    rows = _fetchall("SELECT value FROM user_settings WHERE user_id=? AND key=?", (user_id, key))
+    if rows and rows[0]["value"] is not None:
+        return rows[0]["value"]
+    value = get_parameter(key)
+    return value if value is not None else default
+
+
+def set_user_setting(user_id, key, value):
+    _execute(
+        "INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) "
+        "ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value",
+        (user_id, key, value),
+    )
+
+
+def get_user_settings(user_id):
+    """All per-user settings with defaults applied."""
+    return {key: get_user_setting(user_id, key) for key in USER_SETTING_KEYS}
+
+
+def active_user_ids():
+    """Ids whose queries and notifications are processed: enabled accounts, or 0 before any exist."""
+    if count_users() == 0:
+        return [0]
+    return [row["id"] for row in _fetchall("SELECT id FROM users WHERE disabled=0 ORDER BY id")]
+
+
+def users_with_setting(key, value="True"):
+    """Active users for which a (defaulted) setting equals `value`."""
+    return [uid for uid in active_user_ids() if get_user_setting(uid, key) == value]
+
+
+def get_feed_token(user_id):
+    """The user's private RSS feed token, created on first use."""
+    import secrets
+
+    token = get_user_setting(user_id, "feed_token")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        set_user_setting(user_id, "feed_token", token)
+    return token
+
+
+def get_user_id_by_feed_token(token):
+    if not token:
+        return None
+    rows = _fetchall(
+        "SELECT user_id FROM user_settings WHERE key='feed_token' AND value=?", (token,)
+    )
+    if not rows:
+        return None
+    user_id = rows[0]["user_id"]
+    if user_id in active_user_ids():
+        return user_id
+    return None

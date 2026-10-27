@@ -9,12 +9,17 @@ from flask import (
     session,
     g,
     has_request_context,
+    abort,
+    make_response,
     Response,
     send_from_directory,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
+import collections
 import db
 import core
+import functools
 import hashlib
 import hmac
 import json
@@ -31,15 +36,166 @@ from web_ui_plugin import i18n
 # Get logger for this module
 logger = get_logger(__name__)
 
+
+# ------------------------------------------------------------------ accounts
+# Until the first account is created the interface behaves as it always did: one implicit
+# owner (id 0), optionally protected by a single password. Creating an account (Configuration >
+# Security) switches on multi-user mode: everyone signs in, and queries, items, notifications
+# and personal settings belong to the signed-in account.
+LEGACY_USER = {"id": 0, "username": "", "role": "admin", "disabled": 0, "legacy": True}
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
+MAX_LOGIN_FAILURES = 5
+LOGIN_LOCK_SECONDS = 60
+MIN_PASSWORD_LENGTH = 8
+MAX_SIGNUPS_PER_HOUR = 5
+_login_failures = {}  # ip -> (failures, locked_until)
+_signups = collections.defaultdict(list)  # ip -> signup timestamps
+# A hash to compare against when the username doesn't exist, so timing doesn't reveal it
+_DUMMY_HASH = generate_password_hash(secrets.token_hex(8))
+# Reachable without signing in: the login/sign-up pages, static files and what a PWA needs
+PUBLIC_ENDPOINTS = (
+    "static",
+    "login",
+    "register",
+    "set_language_cookie",
+    "manifest",
+    "service_worker",
+    "offline",
+)
+
+
+def accounts_enabled():
+    if "accounts" not in g:
+        g.accounts = db.count_users() > 0
+    return g.accounts
+
+
+def _env_password():
+    """VN_WEB_PASSWORD: the single password before accounts exist; an administrator
+    recovery password afterwards."""
+    return os.environ.get("VN_WEB_PASSWORD", "")
+
+
+def _legacy_hash():
+    return db.get_parameter("web_password_hash") or ""
+
+
+def legacy_auth_enabled():
+    return not accounts_enabled() and bool(_env_password() or _legacy_hash())
+
+
+def _legacy_token():
+    """Changes whenever the single password does, which logs out every other session."""
+    secret = _env_password() or _legacy_hash()
+    return hashlib.sha256(secret.encode()).hexdigest()[:24]
+
+
+def _check_legacy_password(candidate):
+    env = _env_password()
+    if env:
+        return hmac.compare_digest(env.encode(), candidate.encode())
+    stored = _legacy_hash()
+    return bool(stored) and check_password_hash(stored, candidate)
+
+
+def _pw_version(user):
+    """Changes with the account's password: older sessions stop being valid."""
+    return hashlib.sha256(user["password_hash"].encode()).hexdigest()[:16]
+
+
+def _verify_user(username, password):
+    user = db.get_user_by_name(username.strip())
+    hash_to_check = user["password_hash"] if user else _DUMMY_HASH
+    ok = check_password_hash(hash_to_check, password) and user is not None
+    if user and not ok and user["role"] == "admin":
+        # Recovery: the operator-set environment password signs in any administrator
+        env = _env_password()
+        ok = bool(env) and hmac.compare_digest(env.encode(), password.encode())
+    if user and ok and not user["disabled"]:
+        return user
+    return None
+
+
+def current_user():
+    """The signed-in account, the implicit owner before accounts exist, or None."""
+    if "user" in g:
+        return g.user
+    user = None
+    if not accounts_enabled():
+        user = LEGACY_USER
+    else:
+        user_id = session.get("uid")
+        if user_id:
+            row = db.get_user(user_id)
+            if row and not row["disabled"] and session.get("pwv") == _pw_version(row):
+                user = row
+    g.user = user
+    return user
+
+
+def current_uid():
+    user = current_user()
+    return user["id"] if user else None
+
+
+def is_admin():
+    user = current_user()
+    return bool(user and user["role"] == "admin")
+
+
+def admin_required(view):
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+def _sign_in(user):
+    session.clear()
+    session["uid"] = user["id"]
+    session["pwv"] = _pw_version(user)
+    session.permanent = True
+
+
+def _safe_next(target):
+    """Only follow same-site relative redirects after login."""
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("index")
+
+
+def _client_ip():
+    return request.remote_addr or "?"
+
+
+def _locked_message(ip):
+    failures, locked_until = _login_failures.get(ip, (0, 0))
+    if locked_until > time.time():
+        return tr("Too many attempts. Try again in %(n)s seconds.", n=int(locked_until - time.time()) + 1)
+    return None
+
+
+def _register_failure(ip):
+    failures, _ = _login_failures.get(ip, (0, 0))
+    failures += 1
+    locked = failures >= MAX_LOGIN_FAILURES
+    _login_failures[ip] = (0 if locked else failures, time.time() + LOGIN_LOCK_SECONDS if locked else 0)
+
+
 # ------------------------------------------------------------------ translations
 def current_language():
-    """Language for this request: Configuration setting, else the browser's, else English."""
+    """Language for this request: the account's setting, else the cookie / browser, else English."""
     if not has_request_context():
         return i18n.DEFAULT_LANGUAGE
     if "lang" not in g:
-        g.lang = i18n.resolve_language(
-            db.get_parameter("language"), request.accept_languages
-        )
+        user_id = current_uid()
+        chosen = db.get_user_setting(user_id, "language") if user_id is not None else None
+        if not chosen:
+            chosen = request.cookies.get("vn_lang")
+        g.lang = i18n.resolve_language(chosen, request.accept_languages)
     return g.lang
 
 
@@ -70,92 +226,121 @@ app.config.update(
     SESSION_COOKIE_NAME="vn_session",
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
+    # Set VN_COOKIE_SECURE=1 when the interface is served over HTTPS
+    SESSION_COOKIE_SECURE=os.environ.get("VN_COOKIE_SECURE", "") not in ("", "0", "false"),
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
 )
+if os.environ.get("VN_TRUST_PROXY", "") not in ("", "0", "false"):
+    # Behind a reverse proxy: trust its X-Forwarded-* headers (client IP, scheme, host)
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 app.jinja_env.globals.update(_=tr, _n=tr_n)
 
-# ------------------------------------------------------------------ authentication
-# Optional password for the whole web UI. Set it from Configuration > Security, or with the
-# VN_WEB_PASSWORD environment variable (which takes precedence, handy if the password is lost).
-MAX_LOGIN_FAILURES = 5
-LOGIN_LOCK_SECONDS = 60
-MIN_PASSWORD_LENGTH = 8
-_login_failures = {}  # ip -> (failures, locked_until)
-# Reachable without logging in: the login page, static files and what a PWA needs to install
-PUBLIC_ENDPOINTS = ("static", "login", "manifest", "service_worker", "offline")
 
-
-def _env_password():
-    return os.environ.get("VN_WEB_PASSWORD", "")
-
-
-def _password_hash():
-    return db.get_parameter("web_password_hash") or ""
-
-
-def auth_enabled():
-    return bool(_env_password() or _password_hash())
-
-
-def _auth_token():
-    """Changes whenever the password does, which logs out every other session."""
-    secret = _env_password() or _password_hash()
-    return hashlib.sha256(secret.encode()).hexdigest()[:24]
-
-
-def _check_password(candidate):
-    env = _env_password()
-    if env:
-        return hmac.compare_digest(env.encode(), candidate.encode())
-    stored = _password_hash()
-    return bool(stored) and check_password_hash(stored, candidate)
-
-
-def _safe_next(target):
-    """Only follow same-site relative redirects after login."""
-    if target and target.startswith("/") and not target.startswith("//"):
-        return target
-    return url_for("index")
+@app.after_request
+def security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    if request.endpoint != "static" and response.mimetype == "text/html":
+        # Pages show per-account data: never let a shared cache keep them
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
 
 
 @app.before_request
 def require_login():
-    if not auth_enabled() or request.endpoint in PUBLIC_ENDPOINTS:
+    if request.endpoint in PUBLIC_ENDPOINTS:
         return None
-    if session.get("auth") == _auth_token():
+    if accounts_enabled():
+        if current_user() is not None:
+            return None
+    elif not legacy_auth_enabled() or session.get("auth") == _legacy_token():
         return None
-    if request.headers.get("X-Requested-With") == "fetch" or request.path.startswith(
-        "/control"
-    ):
+    if request.headers.get("X-Requested-With") == "fetch" or request.path.startswith("/control"):
         return jsonify({"status": "error", "message": tr("Login required")}), 401
     return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if not auth_enabled():
+    multi = accounts_enabled()
+    if multi and current_user() is not None:
         return redirect(url_for("index"))
-    ip = request.remote_addr or "?"
-    failures, locked_until = _login_failures.get(ip, (0, 0))
-    error = None
-    if request.method == "POST":
-        if locked_until > time.time():
-            error = tr("Too many attempts. Try again in %(n)s seconds.", n=int(locked_until - time.time()) + 1)
-        elif _check_password(request.form.get("password", "")):
+    if not multi and not legacy_auth_enabled():
+        return redirect(url_for("index"))
+    ip = _client_ip()
+    error = _locked_message(ip)
+    if request.method == "POST" and not error:
+        if multi:
+            user = _verify_user(request.form.get("username", ""), request.form.get("password", ""))
+            if user:
+                _login_failures.pop(ip, None)
+                _sign_in(user)
+                return redirect(_safe_next(request.form.get("next")))
+            _register_failure(ip)
+            error = tr("Wrong username or password.")
+        elif _check_legacy_password(request.form.get("password", "")):
             _login_failures.pop(ip, None)
             session.clear()
-            session["auth"] = _auth_token()
+            session["auth"] = _legacy_token()
             session.permanent = True
             return redirect(_safe_next(request.form.get("next")))
         else:
-            failures += 1
-            locked_until = time.time() + LOGIN_LOCK_SECONDS if failures >= MAX_LOGIN_FAILURES else 0
-            _login_failures[ip] = (0 if locked_until else failures, locked_until)
+            _register_failure(ip)
             error = tr("Wrong password.")
+        error = _locked_message(ip) or error
+    locked = _locked_message(ip) is not None
     return render_template(
-        "login.html", error=error, next=request.values.get("next", "")
-    ), (429 if error and locked_until > time.time() else 200)
+        "login.html",
+        error=error,
+        next=request.values.get("next", ""),
+        username=request.form.get("username", "") if multi else "",
+        signup_open=multi and db.get_parameter("allow_signup") == "True",
+    ), (429 if locked and request.method == "POST" else 200)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    """Self-service sign-up, only when an administrator turned it on."""
+    if not accounts_enabled() or db.get_parameter("allow_signup") != "True":
+        abort(404)
+    if current_user() is not None:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        ip = _client_ip()
+        recent = [t for t in _signups[ip] if t > time.time() - 3600]
+        _signups[ip] = recent
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        if len(recent) >= MAX_SIGNUPS_PER_HOUR:
+            error = tr("Too many sign-ups from this address. Try again later.")
+        elif not USERNAME_RE.match(username):
+            error = tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores.")
+        elif len(password) < MIN_PASSWORD_LENGTH:
+            error = tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH)
+        elif password != request.form.get("confirm_password", ""):
+            error = tr("The two passwords do not match.")
+        else:
+            user_id = db.create_user(username, generate_password_hash(password), "user")
+            if user_id is None:
+                error = tr("That username is already taken.")
+            else:
+                _signups[ip].append(time.time())
+                _sign_in(db.get_user(user_id))
+                flash(tr("Welcome! Your account is ready."), "success")
+                return redirect(url_for("index"))
+    return render_template("register.html", error=error, username=request.form.get("username", "")), (400 if error else 200)
+
+
+@app.route("/lang/<code>")
+def set_language_cookie(code):
+    """Language choice for visitors who are not signed in (login and sign-up pages)."""
+    response = make_response(redirect(_safe_next(request.args.get("next"))))
+    if code in dict(i18n.available_languages()):
+        response.set_cookie("vn_lang", code, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return response
 
 
 @app.route("/logout", methods=["POST"])
@@ -164,22 +349,31 @@ def logout():
     return redirect(url_for("login"))
 
 
+def _password_problem(new, confirm):
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH)
+    if new != confirm:
+        return tr("The two passwords do not match.")
+    return None
+
+
+# ---- single password (before accounts exist)
 @app.route("/security/password", methods=["POST"])
 def set_password():
+    if accounts_enabled():
+        abort(404)
     if _env_password():
         flash(tr("The password is managed by the VN_WEB_PASSWORD environment variable."), "warning")
         return redirect(url_for("config", _anchor="security"))
-    if _password_hash() and not _check_password(request.form.get("current_password", "")):
+    if _legacy_hash() and not _check_legacy_password(request.form.get("current_password", "")):
         flash(tr("Current password is wrong."), "danger")
         return redirect(url_for("config", _anchor="security"))
-    new = request.form.get("new_password", "")
-    if len(new) < MIN_PASSWORD_LENGTH:
-        flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
-    elif new != request.form.get("confirm_password", ""):
-        flash(tr("The two passwords do not match."), "danger")
+    problem = _password_problem(request.form.get("new_password", ""), request.form.get("confirm_password", ""))
+    if problem:
+        flash(problem, "danger")
     else:
-        db.set_parameter("web_password_hash", generate_password_hash(new))
-        session["auth"] = _auth_token()  # keep this browser logged in
+        db.set_parameter("web_password_hash", generate_password_hash(request.form["new_password"]))
+        session["auth"] = _legacy_token()  # keep this browser logged in
         session.permanent = True
         flash(tr("Password saved. Other browsers have been logged out."), "success")
     return redirect(url_for("config", _anchor="security"))
@@ -187,14 +381,154 @@ def set_password():
 
 @app.route("/security/password/remove", methods=["POST"])
 def remove_password():
+    if accounts_enabled():
+        abort(404)
     if _env_password():
         flash(tr("The password is managed by the VN_WEB_PASSWORD environment variable."), "warning")
-    elif not _check_password(request.form.get("current_password", "")):
+    elif not _check_legacy_password(request.form.get("current_password", "")):
         flash(tr("Current password is wrong."), "danger")
     else:
         db.set_parameter("web_password_hash", "")
         flash(tr("Password removed. The web interface is open to anyone who can reach it."), "warning")
     return redirect(url_for("config", _anchor="security"))
+
+
+@app.route("/accounts/enable", methods=["POST"])
+def enable_accounts():
+    """Turn on multi-user mode by creating the first administrator."""
+    if accounts_enabled():
+        abort(404)
+    if legacy_auth_enabled() and not _check_legacy_password(request.form.get("current_password", "")):
+        flash(tr("Current password is wrong."), "danger")
+        return redirect(url_for("config", _anchor="security"))
+    username = request.form.get("username", "").strip()
+    password = request.form.get("new_password", "")
+    problem = None
+    if not USERNAME_RE.match(username):
+        problem = tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores.")
+    else:
+        problem = _password_problem(password, request.form.get("confirm_password", ""))
+    if problem:
+        flash(problem, "danger")
+        return redirect(url_for("config", _anchor="security"))
+    user_id = db.create_user(username, generate_password_hash(password), "admin")
+    if user_id is None:
+        flash(tr("That username is already taken."), "danger")
+        return redirect(url_for("config", _anchor="security"))
+    # Everything created so far becomes this administrator's
+    db.adopt_unowned_data(user_id)
+    db.set_parameter("web_password_hash", "")
+    g.pop("accounts", None)
+    _sign_in(db.get_user(user_id))
+    flash(tr("Accounts are on. You are signed in as %(name)s.", name=username), "success")
+    return redirect(url_for("config", _anchor="security"))
+
+
+# ---- account password (accounts mode)
+@app.route("/account/password", methods=["POST"])
+def change_own_password():
+    user = current_user()
+    if not accounts_enabled() or user is None:
+        abort(404)
+    if not check_password_hash(user["password_hash"], request.form.get("current_password", "")):
+        flash(tr("Current password is wrong."), "danger")
+        return redirect(url_for("config", _anchor="security"))
+    problem = _password_problem(request.form.get("new_password", ""), request.form.get("confirm_password", ""))
+    if problem:
+        flash(problem, "danger")
+    else:
+        db.update_user(user["id"], password_hash=generate_password_hash(request.form["new_password"]))
+        _sign_in(db.get_user(user["id"]))
+        flash(tr("Password saved. Other browsers have been logged out."), "success")
+    return redirect(url_for("config", _anchor="security"))
+
+
+@app.route("/account/feed-token", methods=["POST"])
+def regenerate_feed_token():
+    db.set_user_setting(current_uid(), "feed_token", secrets.token_urlsafe(24))
+    flash(tr("A new feed address was created. The old one no longer works."), "success")
+    return redirect(url_for("config", _anchor="notifications"))
+
+
+# ---- user management (administrators)
+def _last_admin(user_id):
+    """Would removing/demoting/disabling this account leave no active administrator?"""
+    target = db.get_user(user_id)
+    return bool(target and target["role"] == "admin" and not target["disabled"] and db.count_admins(exclude_id=user_id) == 0)
+
+
+@app.route("/users")
+@admin_required
+def users():
+    if not accounts_enabled():
+        return redirect(url_for("config", _anchor="security"))
+    rows = db.list_users()
+    for row in rows:
+        row["created"] = format_ts(row["created_at"])
+    return render_template("users.html", users=rows, allow_signup=db.get_parameter("allow_signup") == "True",
+                           min_password_length=MIN_PASSWORD_LENGTH)
+
+
+@app.route("/users/create", methods=["POST"])
+@admin_required
+def create_user():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    role = "admin" if request.form.get("role") == "admin" else "user"
+    if not USERNAME_RE.match(username):
+        flash(tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores."), "danger")
+    elif len(password) < MIN_PASSWORD_LENGTH:
+        flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
+    elif db.create_user(username, generate_password_hash(password), role) is None:
+        flash(tr("That username is already taken."), "danger")
+    else:
+        flash(tr("Account %(name)s created.", name=username), "success")
+    return redirect(url_for("users"))
+
+
+@app.route("/users/<int:user_id>/update", methods=["POST"])
+@admin_required
+def update_user(user_id):
+    target = db.get_user(user_id)
+    if target is None:
+        abort(404)
+    action = request.form.get("action")
+    if action == "role":
+        new_role = "admin" if request.form.get("role") == "admin" else "user"
+        if new_role != "admin" and _last_admin(user_id):
+            flash(tr("There must be at least one active administrator."), "danger")
+        else:
+            db.update_user(user_id, role=new_role)
+            flash(tr("Account updated."), "success")
+    elif action == "disable":
+        if user_id == current_uid() or _last_admin(user_id):
+            flash(tr("You cannot disable this account."), "danger")
+        else:
+            db.update_user(user_id, disabled=0 if target["disabled"] else 1)
+            flash(tr("Account updated."), "success")
+    elif action == "password":
+        password = request.form.get("password", "")
+        if len(password) < MIN_PASSWORD_LENGTH:
+            flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
+        else:
+            db.update_user(user_id, password_hash=generate_password_hash(password))
+            flash(tr("Password reset. That account was signed out everywhere."), "success")
+            if user_id == current_uid():
+                _sign_in(db.get_user(user_id))
+    return redirect(url_for("users"))
+
+
+@app.route("/users/<int:user_id>/delete", methods=["POST"])
+@admin_required
+def delete_user(user_id):
+    if user_id == current_uid() or _last_admin(user_id):
+        flash(tr("You cannot delete this account."), "danger")
+    elif db.get_user(user_id) is None:
+        abort(404)
+    else:
+        db.delete_user(user_id)
+        flash(tr("Account deleted together with its queries and items."), "success")
+    return redirect(url_for("users"))
 
 
 _version_cache = {"at": 0, "value": None}
@@ -221,10 +555,14 @@ def inject_version_info():
 
 @app.context_processor
 def inject_current_year():
+    user = current_user()
     return {
         "current_year": datetime.now().year,
-        "display_tz": db.get_parameter("timezone") or "",
-        "auth_enabled": auth_enabled(),
+        "display_tz": (db.get_user_setting(user["id"], "timezone") or "") if user else "",
+        "auth_enabled": accounts_enabled() or legacy_auth_enabled(),
+        "accounts_enabled": accounts_enabled(),
+        "current_user": user,
+        "is_admin": is_admin(),
         "lang": current_language(),
         "languages": i18n.available_languages(),
         "js_i18n": i18n.js_catalog(current_language()),
@@ -232,8 +570,9 @@ def inject_current_year():
 
 
 def _display_tz():
-    """The timezone chosen in Config, or None to use the server's local time."""
-    name = db.get_parameter("timezone")
+    """The signed-in account's timezone, or None to use the server's local time."""
+    user_id = current_uid()
+    name = db.get_user_setting(user_id, "timezone") if user_id is not None else None
     if not name:
         return None
     try:
@@ -243,7 +582,7 @@ def _display_tz():
 
 
 def format_ts(epoch):
-    """Format an epoch timestamp in the configured timezone."""
+    """Format an epoch timestamp in the account's timezone."""
     return datetime.fromtimestamp(epoch, _display_tz()).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -325,9 +664,9 @@ def _format_item(item):
 
 
 def _queries_overview():
-    """Queries with filters, collected-item count, average price and last-found time."""
+    """The account's queries with filters, collected-item count, average price and last-found time."""
     overview = []
-    for i, q in enumerate(db.get_queries_overview(), start=1):
+    for i, q in enumerate(db.get_queries_overview(current_uid()), start=1):
         overview.append(
             {
                 "id": i,
@@ -347,26 +686,48 @@ def _queries_overview():
     return overview
 
 
+def _notification_state():
+    """Is the account's Telegram bot / RSS feed switched on (and the bot fully configured)?"""
+    user_id = current_uid()
+    telegram = (
+        db.get_user_setting(user_id, "telegram_enabled") == "True"
+        and bool(db.get_user_setting(user_id, "telegram_token"))
+        and bool(db.get_user_setting(user_id, "telegram_chat_id"))
+    )
+    rss = db.get_user_setting(user_id, "rss_enabled") == "True"
+    return telegram, rss
+
+
+def _feed_url():
+    """The account's private RSS address."""
+    base = (db.get_parameter("rss_public_url") or "").strip().rstrip("/")
+    if not base:
+        host = urlparse("//" + request.host).hostname or "localhost"
+        base = f"{request.scheme}://{host}:{_setting_int('rss_port', 8080)}"
+    return f"{base}/feed/{db.get_feed_token(current_uid())}"
+
+
 @app.route("/")
 def index():
-    params = db.get_all_parameters()
-    latest, _ = db.search_items(limit=8)
+    uid = current_uid()
+    latest, _ = db.search_items(uid, limit=8)
     deals_today = db.search_items(
-        limit=1, since=int(time.time()) - 86400, deals_only=True
+        uid, limit=1, since=int(time.time()) - 86400, deals_only=True
     )[1]
     stats = {
-        "total_items": db.get_total_items_count(),
-        "total_queries": db.get_total_queries_count(),
-        "items_per_day": db.get_items_per_day(),
+        "total_items": db.get_total_items_count(uid),
+        "total_queries": db.get_total_queries_count(uid),
+        "items_per_day": db.get_items_per_day(uid),
         "deals_today": deals_today,
     }
+    telegram_running, rss_running = _notification_state()
     return render_template(
         "index.html",
-        params=params,
         queries=_queries_overview(),
         items=[_format_item(row) for row in latest],
-        telegram_running=params.get("telegram_process_running") == "True",
-        rss_running=params.get("rss_process_running") == "True",
+        telegram_running=telegram_running,
+        rss_running=rss_running,
+        feed_url=_feed_url(),
         stats=stats,
     )
 
@@ -387,6 +748,7 @@ def add_query():
             min_stars=parse_min_stars(request.form.get("min_stars")),
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
             max_price=parse_max_price(request.form.get("max_price")),
+            user_id=current_uid(),
         )
         if is_new_query:
             flash(tr("Query added: %(query)s", query=query), "success")
@@ -400,7 +762,7 @@ def add_query():
 
 @app.route("/remove_query/<int:query_id>", methods=["POST"])
 def remove_query(query_id):
-    message, success = core.process_remove_query(str(query_id))
+    message, success = core.process_remove_query(str(query_id), current_uid())
     if success:
         flash(tr("Query removed"), "success")
     else:
@@ -411,7 +773,7 @@ def remove_query(query_id):
 
 @app.route("/remove_query/all", methods=["POST"])
 def remove_all_queries():
-    message, success = core.process_remove_query("all")
+    message, success = core.process_remove_query("all", current_uid())
     if success:
         flash(tr("All queries removed"), "success")
     else:
@@ -433,6 +795,7 @@ def update_query(query_id):
             min_stars=parse_min_stars(request.form.get("min_stars")),
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
             max_price=parse_max_price(request.form.get("max_price")),
+            user_id=current_uid(),
         )
         if success:
             flash(tr("Query updated"), "success")
@@ -476,6 +839,7 @@ def _page_window(page, pages):
 
 def _items_context():
     """Read the Items filters from the query string and build the template context."""
+    uid = current_uid()
     per_page = _int_arg("per_page", _int_arg("limit", DEFAULT_PAGE_SIZE))
     if per_page not in PAGE_SIZES:
         per_page = DEFAULT_PAGE_SIZE
@@ -511,13 +875,13 @@ def _items_context():
     )
     page = max(1, _int_arg("page", 1))
     items_data, total = db.search_items(
-        limit=per_page, offset=(page - 1) * per_page, **search
+        uid, limit=per_page, offset=(page - 1) * per_page, **search
     )
     pages = max(1, -(-total // per_page))
     if page > pages:  # e.g. the last page emptied after a clear or a stricter filter
         page = pages
         items_data, total = db.search_items(
-            limit=per_page, offset=(page - 1) * per_page, **search
+            uid, limit=per_page, offset=(page - 1) * per_page, **search
         )
 
     formatted_items = [_format_item(row) for row in items_data]
@@ -525,7 +889,7 @@ def _items_context():
     # Queries for the filter dropdown
     formatted_queries = []
     selected_query_display = None
-    for q in db.get_queries():
+    for q in db.get_queries(uid):
         display_name = _query_display(q[1], q[3])
         if filters["query"] == str(q[0]):
             selected_query_display = display_name
@@ -550,10 +914,10 @@ def _items_context():
         active_filters=active_filters,
         selected_query=filters["query"],
         selected_query_display=selected_query_display,
-        autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
+        autorefresh_enabled=db.get_user_setting(uid, "items_autorefresh") == "True",
         autorefresh_interval=max(5, _setting_int("query_refresh_delay", 60)),
         deal_percent=round((1 - db.DEAL_RATIO) * 100),
-        new_items_notice=db.get_parameter("new_items_notice") != "False",
+        new_items_notice=db.get_user_setting(uid, "new_items_notice") != "False",
     )
 
 
@@ -571,7 +935,7 @@ def items_fragment():
 @app.route("/items/clear", methods=["POST"])
 def clear_items():
     query_id = request.form.get("query_id", type=int)
-    deleted = db.clear_items(query_id)
+    deleted = db.clear_items(current_uid(), query_id)
     flash(
         tr_n("Deleted %(n)s item. ", "Deleted %(n)s items. ", deleted)
         + tr("Existing listings will be recorded silently on the next check."),
@@ -599,8 +963,8 @@ def manifest():
         "display": "standalone",
         "orientation": "any",
         "lang": current_language(),
-        "background_color": "#F2F5F4",
-        "theme_color": "#0F2B30",
+        "background_color": "#F2F2F7",
+        "theme_color": "#F2F2F7",
         "icons": [
             icon("icon-192.png", "192x192"),
             icon("icon-512.png", "512x512"),
@@ -628,66 +992,89 @@ def offline():
     return render_template("offline.html")
 
 
+# ------------------------------------------------------------------ settings
 @app.route("/config")
 def config():
-    params = db.get_all_parameters()
+    uid = current_uid()
+    telegram_running, rss_running = _notification_state()
     return render_template(
         "config.html",
-        params=params,
+        params={
+            k: v
+            for k, v in db.get_all_parameters().items()
+            if k not in SECRET_PARAMETERS
+        }
+        if is_admin()
+        else {},
+        us=db.get_user_settings(uid),
         timezones=sorted(zoneinfo.available_timezones()),
         languages=i18n.available_languages(),
-        password_set=bool(_password_hash()),
+        feed_url=_feed_url(),
+        telegram_running=telegram_running,
+        rss_running=rss_running,
+        password_set=bool(_legacy_hash()),
         password_env=bool(_env_password()),
         min_password_length=MIN_PASSWORD_LENGTH,
     )
 
 
+# Never handed to a template
+SECRET_PARAMETERS = {"web_secret_key", "web_password_hash"}
+
+
+def _valid_json(text, kind):
+    try:
+        return isinstance(json.loads(text), kind)
+    except ValueError:
+        return False
+
+
 @app.route("/update_config", methods=["POST"])
 def update_config():
-    # Update Telegram parameters
-    telegram_enabled = "telegram_enabled" in request.form
-    db.set_parameter("telegram_enabled", str(telegram_enabled))
-    db.set_parameter("telegram_token", request.form.get("telegram_token", ""))
-    db.set_parameter("telegram_chat_id", request.form.get("telegram_chat_id", ""))
+    uid = current_uid()
+    form = request.form
 
-    # Update RSS parameters
-    rss_enabled = "rss_enabled" in request.form
-    db.set_parameter("rss_enabled", str(rss_enabled))
-    db.set_parameter("rss_port", _clean_int("rss_port", 8080))
-    db.set_parameter("rss_max_items", _clean_int("rss_max_items", 100))
-
-    # Update System parameters
-    db.set_parameter("items_per_query", _clean_int("items_per_query", 20))
-    db.set_parameter("query_refresh_delay", _clean_int("query_refresh_delay", 60))
-    timezone = request.form.get("timezone", "").strip()
+    # ---- personal settings (every account)
+    db.set_user_setting(uid, "telegram_enabled", str("telegram_enabled" in form))
+    db.set_user_setting(uid, "telegram_token", form.get("telegram_token", "").strip())
+    db.set_user_setting(uid, "telegram_chat_id", form.get("telegram_chat_id", "").strip())
+    db.set_user_setting(uid, "rss_enabled", str("rss_enabled" in form))
+    db.set_user_setting(uid, "message_template", form.get("message_template", ""))
+    db.set_user_setting(uid, "banwords", form.get("banwords", ""))
+    db.set_user_setting(uid, "items_autorefresh", str("items_autorefresh" in form))
+    db.set_user_setting(uid, "new_items_notice", str("new_items_notice" in form))
+    timezone = form.get("timezone", "").strip()
     try:
         if timezone:
             zoneinfo.ZoneInfo(timezone)
-        db.set_parameter("timezone", timezone)
+        db.set_user_setting(uid, "timezone", timezone)
     except Exception:
         flash(tr('Unknown timezone "%(tz)s", keeping the previous one', tz=timezone), "warning")
-    db.set_parameter("banwords", request.form.get("banwords", ""))
-    items_autorefresh = "items_autorefresh" in request.form
-    db.set_parameter("items_autorefresh", str(items_autorefresh))
-    db.set_parameter("new_items_notice", str("new_items_notice" in request.form))
-    language = request.form.get("language", "")
-    if language == "" or language in dict(i18n.available_languages()):
-        db.set_parameter("language", language)
+    if "language" in form:
+        language = form.get("language", "")
+        if language == "" or language in dict(i18n.available_languages()):
+            db.set_user_setting(uid, "language", language)
 
-    # Update Proxy parameters
-    check_proxies = "check_proxies" in request.form
-    db.set_parameter("check_proxies", str(check_proxies))
-    db.set_parameter("proxy_list", request.form.get("proxy_list", ""))
-    db.set_parameter("proxy_list_link", request.form.get("proxy_list_link", ""))
-
-    # Update Advanced parameters
-    db.set_parameter("message_template", request.form.get("message_template", ""))
-    db.set_parameter("user_agents", request.form.get("user_agents", "[]"))
-    db.set_parameter("default_headers", request.form.get("default_headers", "{}"))
-
-    # Reset proxy cache to force refresh on next use
-    db.set_parameter("last_proxy_check_time", "1")
-    logger.info("Proxy settings updated, cache reset")
+    # ---- server-wide settings (administrators)
+    if is_admin():
+        db.set_parameter("rss_port", _clean_int("rss_port", 8080))
+        db.set_parameter("rss_max_items", _clean_int("rss_max_items", 100))
+        db.set_parameter("rss_public_url", form.get("rss_public_url", "").strip())
+        db.set_parameter("items_per_query", _clean_int("items_per_query", 20))
+        db.set_parameter("query_refresh_delay", _clean_int("query_refresh_delay", 60))
+        db.set_parameter("check_proxies", str("check_proxies" in form))
+        db.set_parameter("proxy_list", form.get("proxy_list", ""))
+        db.set_parameter("proxy_list_link", form.get("proxy_list_link", ""))
+        if accounts_enabled():
+            db.set_parameter("allow_signup", str("allow_signup" in form))
+        for field, kind, default in (("user_agents", list, "[]"), ("default_headers", dict, "{}")):
+            value = form.get(field, default)
+            if _valid_json(value, kind):
+                db.set_parameter(field, value)
+            else:
+                flash(tr("%(field)s is not valid JSON, keeping the previous value", field=field), "warning")
+        # Reset proxy cache to force refresh on next use
+        db.set_parameter("last_proxy_check_time", "1")
 
     flash(tr("Configuration updated"), "success")
     return redirect(url_for("config"))
@@ -695,91 +1082,50 @@ def update_config():
 
 @app.route("/control/<process_name>/<action>", methods=["POST"])
 def control_process(process_name, action):
+    """Switch the account's Telegram bot or RSS feed on or off."""
     if process_name not in ["telegram", "rss"]:
         return jsonify({"status": "error", "message": tr("Invalid process name")})
+    if action not in ("start", "stop"):
+        return jsonify({"status": "error", "message": tr("Invalid action")})
+
+    uid = current_uid()
+    key = "telegram_enabled" if process_name == "telegram" else "rss_enabled"
+    running = db.get_user_setting(uid, key) == "True"
+    label = "Telegram bot" if process_name == "telegram" else "RSS feed"
 
     if action == "start":
-        if process_name == "telegram":
-            # Check current status
-            if db.get_parameter("telegram_process_running") == "True":
-                return jsonify(
-                    {"status": "warning", "message": tr("Telegram bot already running")}
-                )
-
-            # Check if telegram_token and telegram_chat_id are set
-            telegram_token = db.get_parameter("telegram_token")
-            telegram_chat_id = db.get_parameter("telegram_chat_id")
-            if not telegram_token or not telegram_chat_id:
-                return jsonify(
-                    {
-                        "status": "error",
-                        "message": tr("Please set Telegram token and chat ID in the configuration panel before starting the Telegram process"),
-                    }
-                )
-
-            # Update process status in the database
-            # The manager process will detect this and start the process
-            db.set_parameter("telegram_process_running", "True")
-            logger.info("Telegram bot process start requested")
+        if running:
+            return jsonify({"status": "warning", "message": tr(f"{label} already running")})
+        if process_name == "telegram" and not (
+            db.get_user_setting(uid, "telegram_token") and db.get_user_setting(uid, "telegram_chat_id")
+        ):
             return jsonify(
-                {"status": "success", "message": tr("Telegram bot start requested")}
+                {
+                    "status": "error",
+                    "message": tr("Please set Telegram token and chat ID in the configuration panel before starting the Telegram process"),
+                }
             )
+        db.set_user_setting(uid, key, "True")
+        logger.info(f"{label} start requested by account {uid}")
+        return jsonify({"status": "success", "message": tr(f"{label} start requested")})
 
-        elif process_name == "rss":
-            # Check current status
-            if db.get_parameter("rss_process_running") == "True":
-                return jsonify(
-                    {"status": "warning", "message": tr("RSS feed already running")}
-                )
-
-            # Update process status in the database
-            # The manager process will detect this and start the process
-            db.set_parameter("rss_process_running", "True")
-            logger.info("RSS feed process start requested")
-            return jsonify({"status": "success", "message": tr("RSS feed start requested")})
-
-    elif action == "stop":
-        if process_name == "telegram":
-            # Check current status
-            if db.get_parameter("telegram_process_running") != "True":
-                return jsonify(
-                    {"status": "warning", "message": tr("Telegram bot not running")}
-                )
-
-            # Update process status in the database
-            # The manager process will detect this and stop the process
-            db.set_parameter("telegram_process_running", "False")
-            logger.info("Telegram bot process stop requested")
-            return jsonify(
-                {"status": "success", "message": tr("Telegram bot stop requested")}
-            )
-
-        elif process_name == "rss":
-            # Check current status
-            if db.get_parameter("rss_process_running") != "True":
-                return jsonify({"status": "warning", "message": tr("RSS feed not running")})
-
-            # Update process status in the database
-            # The manager process will detect this and stop the process
-            db.set_parameter("rss_process_running", "False")
-            logger.info("RSS feed process stop requested")
-            return jsonify({"status": "success", "message": tr("RSS feed stop requested")})
-
-    return jsonify({"status": "error", "message": tr("Invalid action")})
+    if not running:
+        return jsonify({"status": "warning", "message": tr(f"{label} not running")})
+    db.set_user_setting(uid, key, "False")
+    logger.info(f"{label} stop requested by account {uid}")
+    return jsonify({"status": "success", "message": tr(f"{label} stop requested")})
 
 
 @app.route("/control/status", methods=["GET"])
 def process_status():
-    # Get process status from the database
-    telegram_running = db.get_parameter("telegram_process_running") == "True"
-    rss_running = db.get_parameter("rss_process_running") == "True"
-
+    telegram_running, rss_running = _notification_state()
     return jsonify({"telegram": telegram_running, "rss": rss_running})
 
 
+# ------------------------------------------------------------------ allowlist
 @app.route("/allowlist")
 def allowlist():
-    countries = db.get_allowlist()
+    countries = db.get_allowlist(current_uid())
     if countries == 0:
         countries = []
 
@@ -790,7 +1136,7 @@ def allowlist():
 def add_country():
     country = request.form.get("country", "").strip()
     if country:
-        message, country_list = core.process_add_country(country)
+        message, country_list = core.process_add_country(country, current_uid())
         if message.startswith('Country "') and message.endswith("already in allowlist."):
             shown = tr('Country "%(c)s" already in allowlist.', c=country.replace(" ", "").upper())
         else:
@@ -804,7 +1150,7 @@ def add_country():
 
 @app.route("/remove_country/<country>", methods=["POST"])
 def remove_country(country):
-    message, country_list = core.process_remove_country(country)
+    message, country_list = core.process_remove_country(country, current_uid())
     flash(tr(message), "success")
 
     return redirect(url_for("allowlist"))
@@ -812,81 +1158,72 @@ def remove_country(country):
 
 @app.route("/clear_allowlist", methods=["POST"])
 def clear_allowlist():
-    db.clear_allowlist()
+    db.clear_allowlist(current_uid())
     flash(tr("Allowlist cleared"), "success")
 
     return redirect(url_for("allowlist"))
 
 
+# ------------------------------------------------------------------ logs (administrators)
+LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3} - (.+?) - ([A-Z]+) - (.*)$")
+LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+LOG_SCAN_LINES = 20000  # only the tail of the file is read
+
+
+def _read_log_entries():
+    """Newest-first entries from the end of the log file; tracebacks stay with their entry."""
+    path = os.path.join("logs", "vinted.log")
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8", errors="replace") as handle:
+        tail = collections.deque(handle, maxlen=LOG_SCAN_LINES)
+    entries = []
+    for line in tail:
+        line = line.rstrip("\n")
+        match = LOG_LINE.match(line)
+        if match:
+            timestamp, module, level, message = match.groups()
+            entries.append({"timestamp": timestamp, "module": module, "level": level, "message": message})
+        elif entries and line.strip():
+            entries[-1]["message"] += "\n" + line  # continuation (traceback, multi-line message)
+    entries.reverse()
+    return entries
+
+
 @app.route("/logs")
+@admin_required
 def logs():
-    return render_template("logs.html")
+    return render_template("logs.html", levels=LOG_LEVELS)
 
 
 @app.route("/api/logs")
+@admin_required
 def api_logs():
-    offset = int(request.args.get("offset", 0))
-    limit = int(request.args.get("limit", 100))
-    level_filter = request.args.get("level", "all")
-
-    log_file_path = os.path.join("logs", "vinted.log")
-
-    if not os.path.exists(log_file_path):
-        return jsonify({"logs": [], "total": 0})
-
-    # Parse log file
-    log_entries = []
-    total_matching_entries = 0
+    offset = max(0, _int_arg("offset", 0))
+    limit = min(max(1, _int_arg("limit", 50)), 500)
+    level = request.args.get("level", "all").upper()
+    needle = request.args.get("q", "").strip().lower()
 
     try:
-        with open(log_file_path, "r", encoding="utf-8") as file:
-            # Read all lines from the file
-            all_lines = file.readlines()
-
-            # Process lines in reverse order (newest first)
-            all_lines.reverse()
-
-            # Regular expression to parse log lines
-            # Format: 2023-09-15 12:34:56,789 - module_name - LEVEL - Message
-            log_pattern = r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) - ([^-]+) - ([A-Z]+) - (.+)"
-
-            current_entry = 0
-
-            for line in all_lines:
-                match = re.match(log_pattern, line.strip())
-                if match:
-                    timestamp, module, level, message = match.groups()
-
-                    # Apply level filter if specified
-                    if level_filter != "all" and level != level_filter:
-                        continue
-
-                    total_matching_entries += 1
-
-                    # Skip entries before offset
-                    if total_matching_entries <= offset:
-                        continue
-
-                    # Add entry if within limit
-                    if current_entry < limit:
-                        log_entries.append(
-                            {
-                                "timestamp": timestamp,
-                                "module": module.strip(),
-                                "level": level,
-                                "message": message,
-                            }
-                        )
-                        current_entry += 1
-
-                    # Stop if we've reached the limit
-                    if current_entry >= limit:
-                        break
+        entries = _read_log_entries()
     except Exception as e:
         logger.error(f"Error reading log file: {e}")
         return jsonify({"logs": [], "total": 0, "error": str(e)})
 
-    return jsonify({"logs": log_entries, "total": total_matching_entries})
+    counts = collections.Counter(entry["level"] for entry in entries)
+    if level in LOG_LEVELS:
+        entries = [e for e in entries if e["level"] == level]
+    if needle:
+        entries = [e for e in entries if needle in e["message"].lower() or needle in e["module"].lower()]
+    page = entries[offset: offset + limit]
+    return jsonify(
+        {
+            "logs": page,
+            "total": len(entries),
+            "has_more": offset + limit < len(entries),
+            "counts": counts,
+        }
+    )
 
 
 def web_ui_process():

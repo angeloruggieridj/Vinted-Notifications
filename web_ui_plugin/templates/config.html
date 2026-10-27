@@ -11,29 +11,24 @@
     <nav class="settings-nav" aria-label="{{ _('Settings sections') }}">
         <a href="#general" data-pane="general"><i class="bi bi-sliders"></i> {{ _("General") }}</a>
         <a href="#notifications" data-pane="notifications"><i class="bi bi-bell"></i> {{ _("Notifications") }}</a>
-        <a href="#network" data-pane="network"><i class="bi bi-shield-lock"></i> {{ _("Network") }}</a>
-        <a href="#security" data-pane="security"><i class="bi bi-key"></i> {{ _("Security") }}</a>
+        {% if is_admin %}<a href="#server" data-pane="server"><i class="bi bi-hdd-network"></i> {{ _("Server") }}</a>{% endif %}
+        <a href="#security" data-pane="security"><i class="bi bi-person-circle"></i> {{ _("Account") if accounts_enabled else _("Security") }}</a>
     </nav>
 
     <div class="settings-body">
         <form action="/update_config" method="post" id="configForm">
 
-            <!-- General -->
+            <!-- General (personal) -->
             <section class="pane" id="pane-general">
                 <div class="panel">
-                    <h2 class="panel-title">{{ _("Scraping") }}</h2>
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label for="items_per_query" class="form-label">{{ _("Items per query") }}</label>
-                            <input type="number" class="form-control" id="items_per_query" name="items_per_query" min="1" value="{{ params.items_per_query }}">
-                            <div class="form-text">{{ _("Newest listings fetched from Vinted on every check.") }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="query_refresh_delay" class="form-label">{{ _("Check every (seconds)") }}</label>
-                            <input type="number" class="form-control" id="query_refresh_delay" name="query_refresh_delay" min="1" value="{{ params.query_refresh_delay }}">
-                            <div class="form-text">{{ _("Delay between two checks of your queries.") }}</div>
-                        </div>
-                    </div>
+                    <h2 class="panel-title"><i class="bi bi-translate"></i> {{ _("Language") }}</h2>
+                    <select class="form-select" id="language" name="language" aria-label="{{ _('Language') }}">
+                        <option value="" {% if not us.language %}selected{% endif %}>{{ _("Automatic (browser language)") }}</option>
+                        {% for code, name in languages %}
+                        <option value="{{ code }}" {% if us.language == code %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">{{ _("Applies after you save. Automatic follows each browser's language, with English as the fallback.") }}</div>
                 </div>
 
                 <div class="panel">
@@ -42,7 +37,7 @@
                         <div class="col-md-6">
                             <label for="timezone" class="form-label">{{ _("Timezone") }}</label>
                             <input type="text" class="form-control" id="timezone" name="timezone" list="timezoneList"
-                                   value="{{ params.timezone or '' }}" placeholder="{{ _('Browser default') }}" autocomplete="off">
+                                   value="{{ us.timezone or '' }}" placeholder="{{ _('Browser default') }}" autocomplete="off">
                             <datalist id="timezoneList">
                                 {% for tz in timezones %}<option value="{{ tz }}">{% endfor %}
                             </datalist>
@@ -50,26 +45,13 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label d-block">{{ _("Items page") }}</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="items_autorefresh" name="items_autorefresh" {% if params.items_autorefresh == 'True' %}checked{% endif %}>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="items_autorefresh" name="items_autorefresh" {% if us.items_autorefresh == 'True' %}checked{% endif %}>
                                 <label class="form-check-label" for="items_autorefresh">{{ _("Auto-refresh") }}</label>
                             </div>
-                            <div class="form-text">{{ _("Reload the list on every check, with a progress bar to the next refresh.") }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label for="language" class="form-label">{{ _("Language") }}</label>
-                            <select class="form-select" id="language" name="language">
-                                <option value="" {% if not params.language %}selected{% endif %}>{{ _("Automatic (browser language)") }}</option>
-                                {% for code, name in languages %}
-                                <option value="{{ code }}" {% if params.language == code %}selected{% endif %}>{{ name }}</option>
-                                {% endfor %}
-                            </select>
-                            <div class="form-text">{{ _("Applies after you save. Automatic follows each browser's language, with English as the fallback.") }}</div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label d-block">{{ _("New items notice") }}</label>
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="new_items_notice" name="new_items_notice" {% if params.new_items_notice != 'False' %}checked{% endif %}>
+                            <div class="form-text mb-3">{{ _("Reload the list on every check, with a progress bar to the next refresh.") }}</div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="new_items_notice" name="new_items_notice" {% if us.new_items_notice != 'False' %}checked{% endif %}>
                                 <label class="form-check-label" for="new_items_notice">{{ _("Show a box when a refresh finds new items") }}</label>
                             </div>
                             <div class="form-text">{{ _("Appears on the Items page, with a preview of the new listings.") }}</div>
@@ -84,12 +66,12 @@
                         <button class="btn btn-outline-secondary" type="button" id="add-banword-btn">{{ _("Add") }}</button>
                     </div>
                     <div id="banwords-container" class="d-flex flex-wrap gap-2 mb-2"></div>
-                    <input type="hidden" id="banwords" name="banwords" value="{{ params.banwords }}">
+                    <input type="hidden" id="banwords" name="banwords" value="{{ us.banwords or '' }}">
                     <div class="form-text">{{ _("Listings with any of these words in the title are ignored.") }}</div>
                 </div>
             </section>
 
-            <!-- Notifications -->
+            <!-- Notifications (personal) -->
             <section class="pane" id="pane-notifications">
                 <div class="panel">
                     <div class="panel-head">
@@ -101,21 +83,22 @@
                         </div>
                     </div>
                     <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="telegram_enabled" name="telegram_enabled" {% if params.telegram_enabled == 'True' %}checked{% endif %}>
+                        <input class="form-check-input" type="checkbox" id="telegram_enabled" name="telegram_enabled" {% if us.telegram_enabled == 'True' %}checked{% endif %}>
                         <label class="form-check-label" for="telegram_enabled">{{ _("Start automatically") }}</label>
                     </div>
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="telegram_token" class="form-label">{{ _("Bot token") }}</label>
-                            <input type="text" class="form-control" id="telegram_token" name="telegram_token" value="{{ params.telegram_token }}" autocomplete="off">
+                            <input type="password" class="form-control" id="telegram_token" name="telegram_token" value="{{ us.telegram_token or '' }}" autocomplete="off">
                             <div class="form-text">{{ _("Get it from BotFather.") }}</div>
                         </div>
                         <div class="col-md-6">
                             <label for="telegram_chat_id" class="form-label">{{ _("Chat ID") }}</label>
-                            <input type="text" class="form-control" id="telegram_chat_id" name="telegram_chat_id" value="{{ params.telegram_chat_id }}">
+                            <input type="text" class="form-control" id="telegram_chat_id" name="telegram_chat_id" value="{{ us.telegram_chat_id or '' }}">
                             <div class="form-text">{{ _("Where notifications are sent.") }}</div>
                         </div>
                     </div>
+                    {% if accounts_enabled %}<div class="form-text mt-2">{{ _("Each account uses its own bot: only the chat above can control it.") }}</div>{% endif %}
                 </div>
 
                 <div class="panel">
@@ -128,31 +111,79 @@
                         </div>
                     </div>
                     <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="rss_enabled" name="rss_enabled" {% if params.rss_enabled == 'True' %}checked{% endif %}>
+                        <input class="form-check-input" type="checkbox" id="rss_enabled" name="rss_enabled" {% if us.rss_enabled == 'True' %}checked{% endif %}>
                         <label class="form-check-label" for="rss_enabled">{{ _("Start automatically") }}</label>
                     </div>
+                    <label for="feedUrl" class="form-label">{{ _("Your private feed address") }}</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="feedUrl" value="{{ feed_url }}" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="copyFeed" aria-label="{{ _('Copy') }}"><i class="bi bi-clipboard"></i></button>
+                        <button type="submit" form="feedTokenForm" class="btn btn-outline-secondary" title="{{ _('Create a new address') }}" aria-label="{{ _('Create a new address') }}"><i class="bi bi-arrow-repeat"></i></button>
+                    </div>
+                    <div class="form-text">{{ _("Anyone with this address can read your feed. Create a new one if it leaks.") }}</div>
+                </div>
+
+                <div class="panel">
+                    <h2 class="panel-title">{{ _("Message template") }}</h2>
+                    <textarea class="form-control font-monospace" id="message_template" name="message_template" rows="6">{{ us.message_template or '' }}</textarea>
+                    <div class="form-text">{{ _("Variables: {title}, {price}, {brand}, {image}.") }}</div>
+                </div>
+            </section>
+
+            {% if is_admin %}
+            <!-- Server (administrators) -->
+            <section class="pane" id="pane-server">
+                <div class="panel">
+                    <h2 class="panel-title">{{ _("Scraping") }}</h2>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="items_per_query" class="form-label">{{ _("Items per query") }}</label>
+                            <input type="number" class="form-control" id="items_per_query" name="items_per_query" min="1" value="{{ params.items_per_query }}">
+                            <div class="form-text">{{ _("Newest listings fetched from Vinted on every check.") }}</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="query_refresh_delay" class="form-label">{{ _("Check every (seconds)") }}</label>
+                            <input type="number" class="form-control" id="query_refresh_delay" name="query_refresh_delay" min="1" value="{{ params.query_refresh_delay }}">
+                            <div class="form-text">{{ _("Delay between two checks of your queries.") }}</div>
+                        </div>
+                    </div>
+                    {% if accounts_enabled %}<div class="form-text mt-2">{{ _("These apply to every account. Identical searches from different accounts are fetched only once.") }}</div>{% endif %}
+                </div>
+
+                {% if accounts_enabled %}
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title">{{ _("Accounts") }}</h2>
+                        <a href="/users" class="btn btn-sm btn-outline-primary"><i class="bi bi-people me-1"></i> {{ _("Manage accounts") }}</a>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="allow_signup" name="allow_signup" {% if params.allow_signup == 'True' %}checked{% endif %}>
+                        <label class="form-check-label" for="allow_signup">{{ _("Let people create their own account") }}</label>
+                    </div>
+                    <div class="form-text">{{ _("Adds a sign-up link to the login page. Leave it off to create accounts yourself.") }}</div>
+                </div>
+                {% endif %}
+
+                <div class="panel">
+                    <h2 class="panel-title">{{ _("RSS server") }}</h2>
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label for="rss_port" class="form-label">{{ _("Port") }}</label>
                             <input type="number" class="form-control" id="rss_port" name="rss_port" min="1" max="65535" value="{{ params.rss_port }}">
-                            <div class="form-text">{{ _("The feed is public on this port: it is not covered by the web interface password.") }}</div>
+                            <div class="form-text">{{ _("The feeds are served on this port, each at its own private address.") }}</div>
                         </div>
                         <div class="col-md-6">
                             <label for="rss_max_items" class="form-label">{{ _("Items in the feed") }}</label>
                             <input type="number" class="form-control" id="rss_max_items" name="rss_max_items" min="1" value="{{ params.rss_max_items }}">
                         </div>
+                        <div class="col-12">
+                            <label for="rss_public_url" class="form-label">{{ _("Public address (optional)") }}</label>
+                            <input type="text" class="form-control" id="rss_public_url" name="rss_public_url" value="{{ params.rss_public_url or '' }}" placeholder="https://feeds.example.com">
+                            <div class="form-text">{{ _("Use it when the feed is published behind a reverse proxy or another host name.") }}</div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="panel">
-                    <h2 class="panel-title">{{ _("Message template") }}</h2>
-                    <textarea class="form-control font-monospace" id="message_template" name="message_template" rows="6">{{ params.message_template }}</textarea>
-                    <div class="form-text">{{ _("Variables: {title}, {price}, {brand}, {image}.") }}</div>
-                </div>
-            </section>
-
-            <!-- Network -->
-            <section class="pane" id="pane-network">
                 <div class="panel">
                     <h2 class="panel-title">{{ _("Proxies") }}</h2>
                     <div class="form-check form-switch mb-3">
@@ -185,15 +216,59 @@
                     </div>
                 </div>
             </section>
+            {% endif %}
 
             <div class="savebar" id="savebar">
                 <span class="text-muted small">{{ _("Changes apply after you save.") }}</span>
                 <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i> {{ _("Save configuration") }}</button>
             </div>
         </form>
+        <form action="/account/feed-token" method="post" id="feedTokenForm" hidden></form>
 
-        <!-- Security (separate forms, outside the settings form) -->
+        <!-- Security / account (separate forms, outside the settings form) -->
         <section class="pane" id="pane-security">
+            {% if accounts_enabled %}
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title"><i class="bi bi-person-circle"></i> {{ current_user.username }}</h2>
+                    <span class="chip {% if current_user.role == 'admin' %}chip-ok{% endif %}">{{ _("Administrator") if current_user.role == 'admin' else _("Member") }}</span>
+                </div>
+                <p class="text-muted mb-0">{{ _("Your queries, items, notifications and settings are private to this account.") }}</p>
+            </div>
+
+            <div class="panel">
+                <h2 class="panel-title">{{ _("Change password") }}</h2>
+                <form action="/account/password" method="post" class="security-form">
+                    <div>
+                        <label for="current_password" class="form-label">{{ _("Current password") }}</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
+                    </div>
+                    <div>
+                        <label for="new_password" class="form-label">{{ _("New password") }}</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                        <div class="form-text">{{ _("At least %(n)s characters.", n=min_password_length) }}</div>
+                    </div>
+                    <div>
+                        <label for="confirm_password" class="form-label">{{ _("Repeat password") }}</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                    </div>
+                    <div><button type="submit" class="btn btn-primary">{{ _("Change password") }}</button></div>
+                </form>
+            </div>
+
+            {% if is_admin %}
+            <div class="panel">
+                <h2 class="panel-title">{{ _("Good to know") }}</h2>
+                <ul class="mb-0 text-muted">
+                    <li>{{ _("Changing a password signs that account out of every browser.") }}</li>
+                    <li>{{ _("Five wrong attempts lock the login for a minute.") }}</li>
+                    <li>{{ _("Forgot it? Start the container with") }} <code>VN_WEB_PASSWORD=your-new-password</code>{{ _(" and sign in as an administrator with it, then set a new password here.") }}</li>
+                    <li>{{ _("Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.") }}</li>
+                </ul>
+            </div>
+            {% endif %}
+
+            {% else %}
             <div class="panel">
                 <div class="panel-head">
                     <h2 class="panel-title">{{ _("Web interface password") }}</h2>
@@ -241,14 +316,31 @@
             {% endif %}
 
             <div class="panel">
-                <h2 class="panel-title">{{ _("Good to know") }}</h2>
-                <ul class="mb-0 text-muted">
-                    <li>{{ _("Changing the password logs out every other browser.") }}</li>
-                    <li>{{ _("Five wrong attempts lock the login for a minute.") }}</li>
-                    <li>{{ _("Forgot it? Start the container with") }} <code>VN_WEB_PASSWORD=your-new-password</code> {{ _("to get back in, then set a new one here.") }}</li>
-                    <li>{{ _("Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.") }}</li>
-                </ul>
+                <h2 class="panel-title"><i class="bi bi-people"></i> {{ _("Multiple accounts") }}</h2>
+                <p class="text-muted">{{ _("Turn on accounts to share this server: everyone signs in and gets their own queries, items, notifications and settings. What exists today moves to the administrator account you create here.") }}</p>
+                <form action="/accounts/enable" method="post" class="security-form">
+                    {% if password_set and not password_env %}
+                    <div>
+                        <label for="enable_current" class="form-label">{{ _("Current password") }}</label>
+                        <input type="password" class="form-control" id="enable_current" name="current_password" autocomplete="current-password" required>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <label for="admin_username" class="form-label">{{ _("Administrator username") }}</label>
+                        <input type="text" class="form-control" id="admin_username" name="username" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="username" required>
+                    </div>
+                    <div>
+                        <label for="admin_password" class="form-label">{{ _("Password") }}</label>
+                        <input type="password" class="form-control" id="admin_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                    </div>
+                    <div>
+                        <label for="admin_confirm" class="form-label">{{ _("Repeat password") }}</label>
+                        <input type="password" class="form-control" id="admin_confirm" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                    </div>
+                    <div><button type="submit" class="btn btn-primary">{{ _("Turn on accounts") }}</button></div>
+                </form>
             </div>
+            {% endif %}
         </section>
     </div>
 </div>
@@ -258,7 +350,7 @@
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         // ---- Section tabs (kept in the URL hash) ----
-        const panes = ['general', 'notifications', 'network', 'security'];
+        const panes = Array.from(document.querySelectorAll('.settings-nav [data-pane]')).map(function (a) { return a.dataset.pane; });
         const form = document.getElementById('configForm');
 
         function show(name) {
@@ -267,7 +359,7 @@
                 document.getElementById('pane-' + p).classList.toggle('active', p === name);
                 document.querySelector('.settings-nav [data-pane="' + p + '"]').classList.toggle('active', p === name);
             });
-            // The settings form (and its save bar) is hidden on the Security section
+            // The settings form (and its save bar) is hidden on the account section
             form.classList.toggle('d-none', name === 'security');
         }
 
@@ -280,6 +372,18 @@
         });
         show(location.hash.slice(1));
         window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+
+        // ---- Copy the feed address ----
+        const copyBtn = document.getElementById('copyFeed');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function () {
+                const field = document.getElementById('feedUrl');
+                field.select();
+                if (navigator.clipboard) navigator.clipboard.writeText(field.value); else document.execCommand('copy');
+                copyBtn.innerHTML = '<i class="bi bi-check2"></i>';
+                setTimeout(function () { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i>'; }, 1500);
+            });
+        }
 
         // ---- Process control ----
         function toast(message, status) {

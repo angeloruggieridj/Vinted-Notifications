@@ -67,16 +67,12 @@ def item_extractor(items_queue, new_items_queue):
         logger.info("Consumer process stopped")
 
 
-def dispatcher_function(input_queue, rss_queue, telegram_queue):
+def dispatcher_function(input_queue, telegram_queue):
     logger.info("Dispatcher process started")
     try:
         while True:
-            # Get from input queue
-            item = input_queue.get()
-            # Send to RSS queue
-            rss_queue.put(item)
-            #
-            telegram_queue.put(item)
+            # Notifications are addressed to an account; the Telegram process routes them
+            telegram_queue.put(input_queue.get())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Dispatcher process stopped")
     except Exception as e:
@@ -88,11 +84,10 @@ def telegram_bot_process(queue):
     import asyncio
 
     try:
-        # Import LeRobot
-        from telegram_bot_plugin.telegram_bot import LeRobot
+        from telegram_bot_plugin.telegram_bot import run_bots
 
-        # The bot will run with app.run_polling() which is already in the module
-        asyncio.run(LeRobot(queue))
+        # One bot per account that enabled Telegram; they come and go with the settings
+        asyncio.run(run_bots(queue))
     except (KeyboardInterrupt, SystemExit):
         logger.info("Telegram bot process stopped")
     except Exception as e:
@@ -136,66 +131,49 @@ def check_refresh_delay(items_queue):
         logger.error(f"Error updating refresh delay: {e}", exc_info=True)
 
 
-def monitor_processes(items_queue, telegram_queue, rss_queue):
+def telegram_wanted():
+    """Does any account have Telegram switched on with a token and chat ID?"""
+    return any(
+        db.get_user_setting(uid, "telegram_token") and db.get_user_setting(uid, "telegram_chat_id")
+        for uid in db.users_with_setting("telegram_enabled")
+    )
+
+
+def monitor_processes(items_queue, telegram_queue):
     global telegram_process, rss_process
 
     # Check if the query refresh delay has changed
     check_refresh_delay(items_queue)
 
-    ### TELEGRAM ###
-    # Check telegram process status
-    telegram_should_run = db.get_parameter("telegram_process_running") == "True"
-    # Check if the telegram token and chat ID are set
-    telegram_token = db.get_parameter("telegram_token")
-    telegram_chat_id = db.get_parameter("telegram_chat_id")
-    if not telegram_token or not telegram_chat_id:
-        telegram_should_run = False
+    ### TELEGRAM (one process serving every account's bot) ###
+    telegram_should_run = telegram_wanted()
     telegram_is_running = telegram_process is not None and telegram_process.is_alive()
 
     if telegram_should_run and not telegram_is_running:
-        # Start telegram process
         logger.info("Starting telegram bot process.")
         telegram_process = multiprocessing.Process(
             target=telegram_bot_process, args=(telegram_queue,)
         )
         telegram_process.start()
     elif not telegram_should_run and telegram_is_running:
-        # Stop telegram process
         logger.info("Stopping telegram bot process.")
         telegram_process.terminate()
         telegram_process.join()
         telegram_process = None
 
-    ### RSS ###
-    # Check RSS process status
-    rss_should_run = db.get_parameter("rss_process_running") == "True"
+    ### RSS (one server, a private feed per account) ###
+    rss_should_run = bool(db.users_with_setting("rss_enabled"))
     rss_is_running = rss_process is not None and rss_process.is_alive()
 
     if rss_should_run and not rss_is_running:
-        # Start RSS process
-        logger.info("Starting RSS process based on database status")
-        rss_process = multiprocessing.Process(
-            target=rss_feed_process, args=(rss_queue,)
-        )
+        logger.info("Starting RSS process")
+        rss_process = multiprocessing.Process(target=rss_feed_process)
         rss_process.start()
     elif not rss_should_run and rss_is_running:
-        # Stop RSS process
-        logger.info("Stopping RSS process based on database status")
+        logger.info("Stopping RSS process")
         rss_process.terminate()
         rss_process.join()
         rss_process = None
-
-
-def plugin_checker():
-    # Get telegram and rss enable status
-    telegram_enabled = db.get_parameter("telegram_enabled")
-    logger.info("Telegram enabled: {}".format(telegram_enabled))
-    rss_enabled = db.get_parameter("rss_enabled")
-    logger.info("RSS enabled: {}".format(rss_enabled))
-
-    # Reset process status at startup
-    db.set_parameter("telegram_process_running", telegram_enabled)
-    db.set_parameter("rss_process_running", rss_enabled)
 
 
 if __name__ == "__main__":
@@ -217,13 +195,9 @@ if __name__ == "__main__":
         else:
             break
 
-    # Plugin checker
-    plugin_checker()
-
     # Create a shared queue
     items_queue = multiprocessing.Queue()
     new_items_queue = multiprocessing.Queue()
-    rss_queue = multiprocessing.Queue()
     telegram_queue = multiprocessing.Queue()
 
     # 1. Create and start the scrape process
@@ -247,7 +221,6 @@ if __name__ == "__main__":
         target=dispatcher_function,
         args=(
             new_items_queue,
-            rss_queue,
             telegram_queue,
         ),
     )
@@ -260,7 +233,7 @@ if __name__ == "__main__":
         monitor_processes,
         "interval",
         seconds=5,
-        args=[items_queue, telegram_queue, rss_queue],
+        args=[items_queue, telegram_queue],
         name="process_monitor",
     )
     monitor_scheduler.start()
@@ -300,12 +273,8 @@ if __name__ == "__main__":
 
         if telegram_process and telegram_process.is_alive():
             telegram_process.terminate()
-            # Set the process status in the database
-            db.set_parameter("telegram_process_running", "False")
         if rss_process and rss_process.is_alive():
             rss_process.terminate()
-            # Set the process status in the database
-            db.set_parameter("rss_process_running", "False")
 
         # Wait for all processes to terminate
         scrape_process.join()

@@ -71,7 +71,7 @@
                 <span class="service-icon"><i class="bi bi-rss"></i></span>
                 <div class="service-text">
                     <strong>{{ _("RSS feed") }}</strong>
-                    <small class="text-muted" data-status="rss" data-port="{{ params.rss_port }}">{{ _('Running on port %(port)s', port=params.rss_port) if rss_running else _('Stopped') }}</small>
+                    <small class="text-muted" data-status="rss" data-feed="{{ feed_url }}">{% if rss_running %}<a href="{{ feed_url }}" target="_blank" rel="noopener">{{ _('Running') }}</a>{% else %}{{ _('Stopped') }}{% endif %}</small>
                 </div>
                 <button type="button" class="btn btn-sm process-control {{ 'btn-danger' if rss_running else 'btn-success' }}"
                         data-process="rss" data-action="{{ 'stop' if rss_running else 'start' }}">
@@ -126,9 +126,10 @@
             const label = document.querySelector('[data-status="' + process + '"]');
             if (process === 'rss' && running) {
                 const link = document.createElement('a');
-                link.href = location.protocol + '//' + location.hostname + ':' + label.dataset.port + '/';
+                link.href = label.dataset.feed;
                 link.target = '_blank';
-                link.textContent = vnT('Running on port %(port)s', {port: label.dataset.port});
+                link.rel = 'noopener';
+                link.textContent = vnT('Running');
                 label.replaceChildren(link);
             } else {
                 label.textContent = running ? vnT('Running') : vnT('Stopped');
