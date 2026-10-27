@@ -12,6 +12,9 @@ services:
       - VN_data:/app/data
       - VN_logs:/app/logs
     restart: unless-stopped
+    environment:
+      # Optional: password for the web interface (can also be set from Configuration > Security)
+      - VN_WEB_PASSWORD=${VN_WEB_PASSWORD:-}
     read_only: true
     tmpfs:
       - /tmp

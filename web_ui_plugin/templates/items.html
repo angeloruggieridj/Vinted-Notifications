@@ -57,7 +57,7 @@
             <button type="button" class="btn btn-outline-secondary" id="resetFilters" title="Reset all filters"><i class="bi bi-x-lg"></i> Reset</button>
         </div>
     </div>
-    <div class="collapse {% if f.period or f.seller or f.min_price or f.max_price or f.min_stars or f.min_reviews %}show{% endif %}" id="moreFilters">
+    <div class="collapse {% if f.period or f.seller or f.min_price or f.max_price or f.min_stars or f.min_reviews or f.deals %}show{% endif %}" id="moreFilters">
         <div class="filters-more">
             <div class="grid">
                 <div>
@@ -90,6 +90,13 @@
                 <div>
                     <label for="min_reviews" class="form-label">Min seller reviews</label>
                     <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" value="{{ f.min_reviews }}">
+                </div>
+                <div class="deal-switch">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="deals" name="deals" value="1" {% if f.deals %}checked{% endif %}>
+                        <label class="form-check-label" for="deals">Only {{ deal_percent }}%+ below average</label>
+                    </div>
+                    <small class="text-muted">Compared with the average price of the same query</small>
                 </div>
             </div>
         </div>
@@ -135,7 +142,6 @@
         const pageInput = document.getElementById('pageInput');
         const liveBar = document.getElementById('liveBar');
         const refreshBtn = document.getElementById('refreshNow');
-        const TZ = {{ display_tz|tojson }};
         const defaults = {per_page: '24', sort: 'newest', page: '1'};
 
         // ---- Card / list view (persisted, re-applied after every update) ----
@@ -149,32 +155,7 @@
             document.getElementById('listViewBtn').classList.toggle('active', list);
         }
 
-        // ---- Timestamps in the configured timezone (browser's own when empty) ----
-        function absolute(ts) {
-            const date = new Date(ts * 1000);
-            try {
-                return date.toLocaleString('sv-SE', TZ ? {timeZone: TZ} : undefined);
-            } catch (e) {
-                return date.toLocaleString('sv-SE');
-            }
-        }
-
-        function relative(ts) {
-            const s = Math.max(0, Date.now() / 1000 - ts);
-            if (s < 60) return 'just now';
-            if (s < 3600) return Math.floor(s / 60) + ' min ago';
-            if (s < 86400) return Math.floor(s / 3600) + ' h ago';
-            return Math.floor(s / 86400) + ' d ago';
-        }
-
-        function localizeTimes() {
-            results.querySelectorAll('time.local-ts').forEach(function (el) {
-                const ts = parseInt(el.dataset.ts, 10);
-                if (!ts) return;
-                el.title = absolute(ts);
-                el.textContent = el.dataset.rel ? relative(ts) : absolute(ts);
-            });
-        }
+        const localizeTimes = function () { vnLocalizeTimes(results); };
 
         // ---- Fetch the results block with the current filters (no page reload) ----
         let controller = null;
@@ -190,7 +171,8 @@
 
         function updateActiveCount() {
             const keys = ['query', 'q', 'seller', 'min_price', 'max_price', 'min_stars', 'min_reviews', 'period'];
-            const n = keys.filter(function (k) { return form.elements[k].value.trim() !== ''; }).length;
+            const n = keys.filter(function (k) { return form.elements[k].value.trim() !== ''; }).length
+                + (form.elements.deals.checked ? 1 : 0);
             const pill = document.getElementById('activeCount');
             pill.textContent = n;
             pill.hidden = n === 0;
@@ -206,6 +188,7 @@
             try {
                 const response = await fetch('/items/fragment' + (qs ? '?' + qs : ''),
                     {signal: controller.signal, headers: {'X-Requested-With': 'fetch'}});
+                if (response.status === 401) { location.reload(); return; }
                 if (!response.ok) return;
                 results.innerHTML = await response.text();
                 // The server clamps the page (e.g. after a clear); keep the form in sync
@@ -229,7 +212,7 @@
         // ---- Dynamic filters ----
         let debounce = null;
         form.addEventListener('change', function (e) {
-            if (e.target.tagName === 'SELECT') filtersChanged();
+            if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') filtersChanged();
         });
         form.addEventListener('input', function (e) {
             if (e.target.tagName === 'INPUT' && e.target.type !== 'hidden') {
@@ -246,7 +229,9 @@
             form.querySelectorAll('select').forEach(function (s) {
                 s.value = defaults[s.name] !== undefined ? defaults[s.name] : '';
             });
-            form.querySelectorAll('input:not([type=hidden])').forEach(function (i) { i.value = ''; });
+            form.querySelectorAll('input:not([type=hidden])').forEach(function (i) {
+                if (i.type === 'checkbox') i.checked = false; else i.value = '';
+            });
             filtersChanged();
         }
         document.getElementById('resetFilters').addEventListener('click', resetFilters);
@@ -313,8 +298,6 @@
 
         applyView();
         localizeTimes();
-        // Relative times drift: refresh the labels every 30 s
-        setInterval(localizeTimes, 30000);
     });
 </script>
 {% endblock %}

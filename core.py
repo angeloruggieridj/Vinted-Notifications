@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 MAX_NOTIFICATIONS_PER_RUN = 10
 
 
-def process_query(query, name=None, min_stars=None, min_reviews=None):
+def process_query(query, name=None, min_stars=None, min_reviews=None, max_price=None):
     """
     Process a Vinted query URL by:
     1. Checking if the URL is a brand URL and converting it to standard format if needed
@@ -30,6 +30,7 @@ def process_query(query, name=None, min_stars=None, min_reviews=None):
         name (str, optional): A name for the query. If provided, it will be used as the query name.
         min_stars (float, optional): Minimum seller rating (0-5 stars) required for items to be returned.
         min_reviews (int, optional): Minimum number of seller reviews required for items to be returned.
+        max_price (float, optional): Maximum price; more expensive items are skipped.
 
     Returns:
         tuple: (message, is_new_query)
@@ -87,7 +88,7 @@ def process_query(query, name=None, min_stars=None, min_reviews=None):
         return "Query already exists.", False
     else:
         # add the query to the db
-        db.add_query_to_db(processed_query, name, min_stars, min_reviews)
+        db.add_query_to_db(processed_query, name, min_stars, min_reviews, max_price)
         return "Query added.", True
 
 
@@ -148,7 +149,9 @@ def process_remove_query(number):
         return "Invalid number.", False
 
 
-def process_update_query(query_id, query, name, min_stars=None, min_reviews=None):
+def process_update_query(
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None
+):
     """
     Process the update of a query in the database.
 
@@ -189,7 +192,7 @@ def process_update_query(query_id, query, name, min_stars=None, min_reviews=None
 
     # Update the query in the database
     if db.update_query_in_db(
-        query_id, processed_query, name, min_stars, min_reviews
+        query_id, processed_query, name, min_stars, min_reviews, max_price
     ):
         return "Query updated.", True
     else:
@@ -388,6 +391,11 @@ def clear_item_queue(items_queue, new_items_queue):
                 and last_query_timestamp >= item.raw_timestamp
             ):
                 continue
+            # Over budget: skipped before any network call
+            min_stars, min_reviews, max_price = db.get_query_filters(query_id)
+            if max_price and float(item.price) > max_price:
+                db.update_last_timestamp(query_id, item.raw_timestamp)
+                continue
             # In case of multiple queries, we need to check if the item is already in the db
             if db.is_item_in_db_by_id(item.id) is True:
                 # We update the timestamp
@@ -412,7 +420,6 @@ def clear_item_queue(items_queue, new_items_queue):
             # country check.
             seller = item.raw_data.get("user") or {}
             stars, reviews = get_user_feedback(seller.get("id"))
-            min_stars, min_reviews = db.get_query_seller_filters(query_id)
             if stars is not None and (
                 stars < (min_stars or 0) or reviews < (min_reviews or 0)
             ):

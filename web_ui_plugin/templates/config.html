@@ -3,335 +3,235 @@
 {% block title %}Configuration - Vinted Notifications{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+<div class="d-flex justify-content-between flex-wrap align-items-center">
     <h1 class="h2">Configuration</h1>
 </div>
 
-<div class="row">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex align-items-center">
-                <i class="bi bi-gear me-2 text-info"></i>
-                <h5 class="card-title mb-0">Application Settings</h5>
-            </div>
-            <div class="card-body">
-                <form action="/update_config" method="post">
-                    <div class="row mb-4">
-                        <div class="col-md-12">
-                            <div class="card h-100">
-                                <div class="card-header d-flex align-items-center">
-                                    <i class="bi bi-gear-fill me-2 text-info"></i>
-                                    <h5 class="card-title mb-0">System Settings</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="items_per_query" class="form-label">Items Per Query</label>
-                                                <input type="number" class="form-control" id="items_per_query"
-                                                       name="items_per_query" value="{{ params.items_per_query }}">
-                                                <small class="form-text text-muted">Maximum number of items to fetch per
-                                                    query</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="query_refresh_delay" class="form-label">Query Refresh Delay
-                                                    (seconds)</label>
-                                                <input type="number" class="form-control" id="query_refresh_delay"
-                                                       name="query_refresh_delay"
-                                                       value="{{ params.query_refresh_delay }}">
-                                                <small class="form-text text-muted">Delay between query refreshes in
-                                                    seconds</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-6">
-                                            <div class="mb-3">
-                                                <label for="timezone" class="form-label">Timezone</label>
-                                                <input type="text" class="form-control" id="timezone" name="timezone"
-                                                       list="timezoneList" value="{{ params.timezone or '' }}"
-                                                       placeholder="Browser default" autocomplete="off">
-                                                <datalist id="timezoneList">
-                                                    {% for tz in timezones %}<option value="{{ tz }}">{% endfor %}
-                                                </datalist>
-                                                <small class="form-text text-muted">Timezone used to display dates, for
-                                                    example Europe/Rome or Europe/London. Leave empty to use your
-                                                    browser's timezone.</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox"
-                                                           id="items_autorefresh" name="items_autorefresh"
-                                                           {% if params.items_autorefresh == 'True' %}checked{% endif %}>
-                                                    <label class="form-check-label" for="items_autorefresh">
-                                                        Auto-refresh Items page
-                                                    </label>
-                                                    <small class="form-text text-muted d-block">Automatically reload the
-                                                        Items page every "Query Refresh Delay" seconds, showing a
-                                                        progress bar</small>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <label for="banwords-input" class="form-label">Banwords</label>
-                                                <div class="input-group mb-2">
-                                                    <input type="text" class="form-control" id="banwords-input"
-                                                           placeholder="Enter a word to ban">
-                                                    <button class="btn btn-outline-secondary" type="button"
-                                                            id="add-banword-btn">Add
-                                                    </button>
-                                                </div>
-                                                <div id="banwords-container" class="d-flex flex-wrap gap-2 mb-2">
-                                                    <!-- Banwords will be displayed here as tags -->
-                                                </div>
-                                                <input type="hidden" id="banwords" name="banwords"
-                                                       value="{{ params.banwords }}">
-                                                <small class="form-text text-muted">Words to filter out from item
-                                                    titles. Items with these words in their titles will be
-                                                    ignored.</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-4">
+<div class="settings">
+    <nav class="settings-nav" aria-label="Settings sections">
+        <a href="#general" data-pane="general"><i class="bi bi-sliders"></i> General</a>
+        <a href="#notifications" data-pane="notifications"><i class="bi bi-bell"></i> Notifications</a>
+        <a href="#network" data-pane="network"><i class="bi bi-shield-lock"></i> Network</a>
+        <a href="#security" data-pane="security"><i class="bi bi-key"></i> Security</a>
+    </nav>
+
+    <div class="settings-body">
+        <form action="/update_config" method="post" id="configForm">
+
+            <!-- General -->
+            <section class="pane" id="pane-general">
+                <div class="panel">
+                    <h2 class="panel-title">Scraping</h2>
+                    <div class="row g-3">
                         <div class="col-md-6">
-                            <div class="card h-100">
-                                <div class="card-header d-flex align-items-center">
-                                    <i class="bi bi-telegram me-2 text-info"></i>
-                                    <h5 class="card-title mb-0">Telegram Bot</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <div class="form-check form-switch">
-                                            {% if params.telegram_enabled == 'True' %}
-                                            <input class="form-check-input" type="checkbox" id="telegram_enabled"
-                                                   name="telegram_enabled" checked>
-                                            {% else %}
-                                            <input class="form-check-input" type="checkbox" id="telegram_enabled"
-                                                   name="telegram_enabled">
-                                            {% endif %}
-                                            <label class="form-check-label" for="telegram_enabled">
-                                                Auto Start
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="telegram_token" class="form-label">Bot Token</label>
-                                        <input type="text" class="form-control" id="telegram_token"
-                                               name="telegram_token" value="{{ params.telegram_token }}">
-                                        <small class="form-text text-muted">Get this from BotFather</small>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="telegram_chat_id" class="form-label">Chat ID</label>
-                                        <input type="text" class="form-control" id="telegram_chat_id"
-                                               name="telegram_chat_id" value="{{ params.telegram_chat_id }}">
-                                        <small class="form-text text-muted">The chat ID where notifications will be
-                                            sent</small>
-                                    </div>
-                                </div>
-                            </div>
+                            <label for="items_per_query" class="form-label">Items per query</label>
+                            <input type="number" class="form-control" id="items_per_query" name="items_per_query" min="1" value="{{ params.items_per_query }}">
+                            <div class="form-text">Newest listings fetched from Vinted on every check.</div>
                         </div>
                         <div class="col-md-6">
-                            <div class="card h-100">
-                                <div class="card-header d-flex align-items-center">
-                                    <i class="bi bi-rss me-2 text-info"></i>
-                                    <h5 class="card-title mb-0">RSS Feed</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <div class="form-check form-switch">
-                                            {% if params.rss_enabled == 'True' %}
-                                            <input class="form-check-input" type="checkbox" id="rss_enabled"
-                                                   name="rss_enabled" checked>
-                                            {% else %}
-                                            <input class="form-check-input" type="checkbox" id="rss_enabled"
-                                                   name="rss_enabled">
-                                            {% endif %}
-                                            <label class="form-check-label" for="rss_enabled">
-                                                Auto Start
-                                            </label>
-                                        </div>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="rss_port" class="form-label">Port</label>
-                                        <input type="number" class="form-control" id="rss_port" name="rss_port"
-                                               value="{{ params.rss_port }}">
-                                        <small class="form-text text-muted">The port on which the RSS feed will be
-                                            served</small>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="rss_max_items" class="form-label">Maximum Items</label>
-                                        <input type="number" class="form-control" id="rss_max_items"
-                                               name="rss_max_items" value="{{ params.rss_max_items }}">
-                                        <small class="form-text text-muted">Maximum number of items to keep in the RSS
-                                            feed</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-4">
-                        <div class="col-md-12">
-                            <div class="card h-100">
-                                <div class="card-header d-flex align-items-center">
-                                    <i class="bi bi-shield-lock me-2 text-info"></i>
-                                    <h5 class="card-title mb-0">Proxy Settings</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <div class="form-check form-switch">
-                                                    {% if params.check_proxies == 'True' %}
-                                                    <input class="form-check-input" type="checkbox" id="check_proxies"
-                                                           name="check_proxies" checked>
-                                                    {% else %}
-                                                    <input class="form-check-input" type="checkbox" id="check_proxies"
-                                                           name="check_proxies">
-                                                    {% endif %}
-                                                    <label class="form-check-label" for="check_proxies">
-                                                        Check Proxies
-                                                    </label>
-                                                    <small class="form-text text-muted d-block">Verify if proxies are
-                                                        working before using them</small>
-                                                </div>
-                                            </div>
-                                            <div class="mb-3">
-                                                <label for="proxy_list" class="form-label">Proxy List</label>
-                                                <textarea class="form-control" id="proxy_list" name="proxy_list"
-                                                          rows="3">{{ params.proxy_list }}</textarea>
-                                                <small class="form-text text-muted">List of proxies separated by
-                                                    semicolons (;)<br>
-                                                    Format: http://ip:port or ip:port</small>
-                                            </div>
-                                            <div class="mb-3">
-                                                <label for="proxy_list_link" class="form-label">Proxy List Link</label>
-                                                <input type="text" class="form-control" id="proxy_list_link"
-                                                       name="proxy_list_link" value="{{ params.proxy_list_link }}">
-                                                <small class="form-text text-muted">URL to fetch proxies from (one proxy
-                                                    per line)</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row mb-4">
-                        <div class="col-md-12">
-                            <div class="card h-100">
-                                <div class="card-header d-flex align-items-center">
-                                    <i class="bi bi-gear-wide-connected me-2 text-info"></i>
-                                    <h5 class="card-title mb-0">Advanced Settings</h5>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row">
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <label for="message_template" class="form-label">Notification Message
-                                                    Template</label>
-                                                <textarea class="form-control" id="message_template"
-                                                          name="message_template"
-                                                          rows="6">{{ params.message_template }}</textarea>
-                                                <small class="form-text text-muted">Template for notification messages.
-                                                    Available variables: {title}, {price}, {brand}, {image}</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <label for="user_agents" class="form-label">User Agents</label>
-                                                <textarea class="form-control" id="user_agents" name="user_agents"
-                                                          rows="5">{{ params.user_agents }}</textarea>
-                                                <small class="form-text text-muted">List of user agents for HTTP
-                                                    requests (JSON format)</small>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-12">
-                                            <div class="mb-3">
-                                                <label for="default_headers" class="form-label">Default Headers</label>
-                                                <textarea class="form-control" id="default_headers"
-                                                          name="default_headers"
-                                                          rows="3">{{ params.default_headers }}</textarea>
-                                                <small class="form-text text-muted">Default headers for HTTP requests
-                                                    (JSON format)</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-12">
-                            <button type="submit" class="btn btn-primary">Save Configuration</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mt-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex align-items-center">
-                <i class="bi bi-toggles me-2 text-info"></i>
-                <h5 class="card-title mb-0">Process Control</h5>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6 class="mb-0">Telegram Bot</h6>
-                                <small class="text-muted process-status" data-process="telegram">Checking
-                                    status...</small>
-                            </div>
-                            <div>
-                                <button class="btn btn-success process-control" data-process="telegram"
-                                        data-action="start">
-                                    <i class="bi bi-play-fill"></i> Start
-                                </button>
-                                <button class="btn btn-danger process-control" data-process="telegram"
-                                        data-action="stop">
-                                    <i class="bi bi-stop-fill"></i> Stop
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="d-flex justify-content-between align-items-center mb-3">
-                            <div>
-                                <h6 class="mb-0">RSS Feed</h6>
-                                <small class="text-muted process-status" data-process="rss">Checking status...</small>
-                            </div>
-                            <div>
-                                <button class="btn btn-success process-control" data-process="rss" data-action="start">
-                                    <i class="bi bi-play-fill"></i> Start
-                                </button>
-                                <button class="btn btn-danger process-control" data-process="rss" data-action="stop">
-                                    <i class="bi bi-stop-fill"></i> Stop
-                                </button>
-                            </div>
+                            <label for="query_refresh_delay" class="form-label">Check every (seconds)</label>
+                            <input type="number" class="form-control" id="query_refresh_delay" name="query_refresh_delay" min="1" value="{{ params.query_refresh_delay }}">
+                            <div class="form-text">Delay between two checks of your queries.</div>
                         </div>
                     </div>
                 </div>
+
+                <div class="panel">
+                    <h2 class="panel-title">Display</h2>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="timezone" class="form-label">Timezone</label>
+                            <input type="text" class="form-control" id="timezone" name="timezone" list="timezoneList"
+                                   value="{{ params.timezone or '' }}" placeholder="Browser default" autocomplete="off">
+                            <datalist id="timezoneList">
+                                {% for tz in timezones %}<option value="{{ tz }}">{% endfor %}
+                            </datalist>
+                            <div class="form-text">For example Europe/Rome or Europe/London. Leave empty to use your browser's timezone.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label d-block">Items page</label>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="items_autorefresh" name="items_autorefresh" {% if params.items_autorefresh == 'True' %}checked{% endif %}>
+                                <label class="form-check-label" for="items_autorefresh">Auto-refresh</label>
+                            </div>
+                            <div class="form-text">Reload the list on every check, with a progress bar to the next refresh.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2 class="panel-title">Banned words</h2>
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="banwords-input" placeholder="Word to ban">
+                        <button class="btn btn-outline-secondary" type="button" id="add-banword-btn">Add</button>
+                    </div>
+                    <div id="banwords-container" class="d-flex flex-wrap gap-2 mb-2"></div>
+                    <input type="hidden" id="banwords" name="banwords" value="{{ params.banwords }}">
+                    <div class="form-text">Listings with any of these words in the title are ignored.</div>
+                </div>
+            </section>
+
+            <!-- Notifications -->
+            <section class="pane" id="pane-notifications">
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title"><i class="bi bi-telegram"></i> Telegram bot</h2>
+                        <div class="service-controls">
+                            <small class="process-status text-muted" data-process="telegram">Checking...</small>
+                            <button type="button" class="btn btn-sm btn-success process-control" data-process="telegram" data-action="start"><i class="bi bi-play-fill"></i> Start</button>
+                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="telegram" data-action="stop"><i class="bi bi-stop-fill"></i> Stop</button>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="telegram_enabled" name="telegram_enabled" {% if params.telegram_enabled == 'True' %}checked{% endif %}>
+                        <label class="form-check-label" for="telegram_enabled">Start automatically</label>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="telegram_token" class="form-label">Bot token</label>
+                            <input type="text" class="form-control" id="telegram_token" name="telegram_token" value="{{ params.telegram_token }}" autocomplete="off">
+                            <div class="form-text">Get it from BotFather.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="telegram_chat_id" class="form-label">Chat ID</label>
+                            <input type="text" class="form-control" id="telegram_chat_id" name="telegram_chat_id" value="{{ params.telegram_chat_id }}">
+                            <div class="form-text">Where notifications are sent.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-head">
+                        <h2 class="panel-title"><i class="bi bi-rss"></i> RSS feed</h2>
+                        <div class="service-controls">
+                            <small class="process-status text-muted" data-process="rss">Checking...</small>
+                            <button type="button" class="btn btn-sm btn-success process-control" data-process="rss" data-action="start"><i class="bi bi-play-fill"></i> Start</button>
+                            <button type="button" class="btn btn-sm btn-danger process-control" data-process="rss" data-action="stop"><i class="bi bi-stop-fill"></i> Stop</button>
+                        </div>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="rss_enabled" name="rss_enabled" {% if params.rss_enabled == 'True' %}checked{% endif %}>
+                        <label class="form-check-label" for="rss_enabled">Start automatically</label>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="rss_port" class="form-label">Port</label>
+                            <input type="number" class="form-control" id="rss_port" name="rss_port" min="1" max="65535" value="{{ params.rss_port }}">
+                            <div class="form-text">The feed is public on this port: it is not covered by the web interface password.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="rss_max_items" class="form-label">Items in the feed</label>
+                            <input type="number" class="form-control" id="rss_max_items" name="rss_max_items" min="1" value="{{ params.rss_max_items }}">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2 class="panel-title">Message template</h2>
+                    <textarea class="form-control font-monospace" id="message_template" name="message_template" rows="6">{{ params.message_template }}</textarea>
+                    <div class="form-text">Variables: {title}, {price}, {brand}, {image}.</div>
+                </div>
+            </section>
+
+            <!-- Network -->
+            <section class="pane" id="pane-network">
+                <div class="panel">
+                    <h2 class="panel-title">Proxies</h2>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="check_proxies" name="check_proxies" {% if params.check_proxies == 'True' %}checked{% endif %}>
+                        <label class="form-check-label" for="check_proxies">Check proxies before using them</label>
+                    </div>
+                    <div class="mb-3">
+                        <label for="proxy_list" class="form-label">Proxy list</label>
+                        <textarea class="form-control font-monospace" id="proxy_list" name="proxy_list" rows="3">{{ params.proxy_list }}</textarea>
+                        <div class="form-text">Separated by semicolons (;). Format: http://ip:port or ip:port.</div>
+                    </div>
+                    <div>
+                        <label for="proxy_list_link" class="form-label">Proxy list link</label>
+                        <input type="text" class="form-control" id="proxy_list_link" name="proxy_list_link" value="{{ params.proxy_list_link }}">
+                        <div class="form-text">A URL returning one proxy per line.</div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2 class="panel-title">Requests</h2>
+                    <div class="mb-3">
+                        <label for="user_agents" class="form-label">User agents</label>
+                        <textarea class="form-control font-monospace" id="user_agents" name="user_agents" rows="5">{{ params.user_agents }}</textarea>
+                        <div class="form-text">JSON list of user agents used for HTTP requests.</div>
+                    </div>
+                    <div>
+                        <label for="default_headers" class="form-label">Default headers</label>
+                        <textarea class="form-control font-monospace" id="default_headers" name="default_headers" rows="3">{{ params.default_headers }}</textarea>
+                        <div class="form-text">JSON object of headers sent with every request.</div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="savebar" id="savebar">
+                <span class="text-muted small">Changes apply after you save.</span>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-1"></i> Save configuration</button>
             </div>
-        </div>
+        </form>
+
+        <!-- Security (separate forms, outside the settings form) -->
+        <section class="pane" id="pane-security">
+            <div class="panel">
+                <div class="panel-head">
+                    <h2 class="panel-title">Web interface password</h2>
+                    {% if password_env %}<span class="chip">Set by environment</span>
+                    {% elif password_set %}<span class="chip chip-ok"><i class="bi bi-lock-fill"></i> Protected</span>
+                    {% else %}<span class="chip chip-warn"><i class="bi bi-unlock-fill"></i> Open to anyone who can reach this port</span>{% endif %}
+                </div>
+
+                {% if password_env %}
+                <p class="mb-0">The password comes from the <code>VN_WEB_PASSWORD</code> environment variable. Change or remove it there and restart the container.</p>
+                {% else %}
+                <p class="text-muted">{% if password_set %}Change the password, or remove it to open the interface again.{% else %}Without a password, anyone who can open this page can change settings and delete data.{% endif %}</p>
+                <form action="/security/password" method="post" class="security-form">
+                    {% if password_set %}
+                    <div>
+                        <label for="current_password" class="form-label">Current password</label>
+                        <input type="password" class="form-control" id="current_password" name="current_password" autocomplete="current-password" required>
+                    </div>
+                    {% endif %}
+                    <div>
+                        <label for="new_password" class="form-label">{{ 'New password' if password_set else 'Password' }}</label>
+                        <input type="password" class="form-control" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                        <div class="form-text">At least {{ min_password_length }} characters.</div>
+                    </div>
+                    <div>
+                        <label for="confirm_password" class="form-label">Repeat password</label>
+                        <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+                    </div>
+                    <div><button type="submit" class="btn btn-primary">{{ 'Change password' if password_set else 'Set password' }}</button></div>
+                </form>
+                {% endif %}
+            </div>
+
+            {% if password_set and not password_env %}
+            <div class="panel">
+                <h2 class="panel-title">Remove password</h2>
+                <form action="/security/password/remove" method="post" class="security-form">
+                    <div>
+                        <label for="remove_current" class="form-label">Current password</label>
+                        <input type="password" class="form-control" id="remove_current" name="current_password" autocomplete="current-password" required>
+                    </div>
+                    <div><button type="submit" class="btn btn-outline-danger">Remove password</button></div>
+                </form>
+            </div>
+            {% endif %}
+
+            <div class="panel">
+                <h2 class="panel-title">Good to know</h2>
+                <ul class="mb-0 text-muted">
+                    <li>Changing the password logs out every other browser.</li>
+                    <li>Five wrong attempts lock the login for a minute.</li>
+                    <li>Forgot it? Start the container with <code>VN_WEB_PASSWORD=your-new-password</code> to get back in, then set a new one here.</li>
+                    <li>Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.</li>
+                </ul>
+            </div>
+        </section>
     </div>
 </div>
 {% endblock %}
@@ -339,169 +239,127 @@
 {% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
-        // Process control buttons
-        const processButtons = document.querySelectorAll('.process-control');
-        processButtons.forEach(button => {
-            button.addEventListener('click', function () {
-                const process = this.getAttribute('data-process');
-                const action = this.getAttribute('data-action');
+        // ---- Section tabs (kept in the URL hash) ----
+        const panes = ['general', 'notifications', 'network', 'security'];
+        const form = document.getElementById('configForm');
 
-                // Disable all buttons for this process
-                document.querySelectorAll(`.process-control[data-process="${process}"]`).forEach(btn => {
-                    btn.disabled = true;
-                });
+        function show(name) {
+            if (panes.indexOf(name) === -1) name = 'general';
+            panes.forEach(function (p) {
+                document.getElementById('pane-' + p).classList.toggle('active', p === name);
+                document.querySelector('.settings-nav [data-pane="' + p + '"]').classList.toggle('active', p === name);
+            });
+            // The settings form (and its save bar) is hidden on the Security section
+            form.classList.toggle('d-none', name === 'security');
+        }
 
-                fetch(`/control/${process}/${action}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        // Show alert
-                        const alertClass = data.status === 'success' ? 'success' :
-                            data.status === 'warning' ? 'warning' : 'danger';
-
-                        const alertDiv = document.createElement('div');
-                        alertDiv.className = `alert alert-${alertClass} alert-dismissible fade show flash-message`;
-                        alertDiv.setAttribute('role', 'alert');
-                        alertDiv.innerHTML = `
-                        ${data.message}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    `;
-
-                        document.querySelector('.flash-messages').appendChild(alertDiv);
-
-                        // Auto-dismiss after 5 seconds
-                        setTimeout(() => {
-                            const bsAlert = new bootstrap.Alert(alertDiv);
-                            bsAlert.close();
-                        }, 5000);
-
-                        // Update status
-                        checkProcessStatus();
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        // Re-enable buttons
-                        document.querySelectorAll(`.process-control[data-process="${process}"]`).forEach(btn => {
-                            btn.disabled = false;
-                        });
-                    });
+        document.querySelectorAll('.settings-nav a').forEach(function (link) {
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                history.replaceState(null, '', '#' + link.dataset.pane);
+                show(link.dataset.pane);
             });
         });
+        show(location.hash.slice(1));
+        window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
 
-        // Check process status
+        // ---- Process control ----
+        function toast(message, status) {
+            const kind = status === 'success' ? 'success' : status === 'warning' ? 'warning' : 'danger';
+            const el = document.createElement('div');
+            el.className = 'alert alert-' + kind + ' alert-dismissible fade show flash-message';
+            el.setAttribute('role', 'alert');
+            el.textContent = message;
+            const close = document.createElement('button');
+            close.type = 'button';
+            close.className = 'btn-close';
+            close.setAttribute('data-bs-dismiss', 'alert');
+            close.setAttribute('aria-label', 'Close');
+            el.appendChild(close);
+            document.querySelector('.flash-messages').appendChild(el);
+            setTimeout(function () { bootstrap.Alert.getOrCreateInstance(el).close(); }, 5000);
+        }
+
+        function setButtons(process, running) {
+            document.querySelector('.process-status[data-process="' + process + '"]').textContent = running ? 'Running' : 'Stopped';
+            document.querySelector('.process-control[data-process="' + process + '"][data-action="start"]').style.display = running ? 'none' : '';
+            document.querySelector('.process-control[data-process="' + process + '"][data-action="stop"]').style.display = running ? '' : 'none';
+        }
+
         function checkProcessStatus() {
-            fetch('/control/status', {
-                method: 'GET'
-            })
-                .then(response => response.json())
-                .then(data => {
-                    // Update status text
-                    document.querySelector('.process-status[data-process="telegram"]').textContent =
-                        data.telegram ? 'Running' : 'Stopped';
-                    document.querySelector('.process-status[data-process="rss"]').textContent =
-                        data.rss ? 'Running' : 'Stopped';
-
-                    // Update button visibility
-                    document.querySelector('.process-control[data-process="telegram"][data-action="start"]').style.display =
-                        data.telegram ? 'none' : 'inline-block';
-                    document.querySelector('.process-control[data-process="telegram"][data-action="stop"]').style.display =
-                        data.telegram ? 'inline-block' : 'none';
-                    document.querySelector('.process-control[data-process="rss"][data-action="start"]').style.display =
-                        data.rss ? 'none' : 'inline-block';
-                    document.querySelector('.process-control[data-process="rss"][data-action="stop"]').style.display =
-                        data.rss ? 'inline-block' : 'none';
-
-                    // Re-enable buttons
-                    document.querySelectorAll('.process-control').forEach(btn => {
-                        btn.disabled = false;
-                    });
+            fetch('/control/status', {headers: {'X-Requested-With': 'fetch'}})
+                .then(function (response) { return response.json(); })
+                .then(function (data) {
+                    setButtons('telegram', data.telegram);
+                    setButtons('rss', data.rss);
                 })
-                .catch(error => {
+                .catch(function (error) {
                     console.error('Error:', error);
-                    // Set status to unknown
-                    document.querySelectorAll('.process-status').forEach(status => {
-                        status.textContent = 'Unknown';
-                    });
-                    // Re-enable all buttons
-                    document.querySelectorAll('.process-control').forEach(btn => {
-                        btn.disabled = false;
-                        btn.style.display = 'inline-block';
-                    });
+                    document.querySelectorAll('.process-status').forEach(function (s) { s.textContent = 'Unknown'; });
+                })
+                .finally(function () {
+                    document.querySelectorAll('.process-control').forEach(function (b) { b.disabled = false; });
                 });
         }
 
-        // Initial check
+        document.querySelectorAll('.process-control').forEach(function (button) {
+            button.addEventListener('click', function () {
+                const process = button.dataset.process;
+                document.querySelectorAll('.process-control[data-process="' + process + '"]').forEach(function (b) { b.disabled = true; });
+                fetch('/control/' + process + '/' + button.dataset.action, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json', 'X-Requested-With': 'fetch'}
+                })
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) { toast(data.message, data.status); checkProcessStatus(); })
+                    .catch(function (error) { console.error('Error:', error); checkProcessStatus(); });
+            });
+        });
         checkProcessStatus();
 
-        // Banwords handling
-        const banwordsInput = document.getElementById('banwords-input');
-        const addBanwordBtn = document.getElementById('add-banword-btn');
-        const banwordsContainer = document.getElementById('banwords-container');
-        const banwordsHiddenInput = document.getElementById('banwords');
+        // ---- Banned words ----
+        const input = document.getElementById('banwords-input');
+        const container = document.getElementById('banwords-container');
+        const hidden = document.getElementById('banwords');
 
-        // Function to create a banword tag
-        function createBanwordTag(word) {
-            if (!word.trim()) return;
+        function syncHidden() {
+            hidden.value = Array.from(container.querySelectorAll('.banword-tag')).map(function (t) { return t.dataset.word; }).join('|||');
+        }
 
-            // Check if the word already exists
-            const existingTags = banwordsContainer.querySelectorAll('.banword-tag');
-            for (let tag of existingTags) {
-                if (tag.dataset.word.toLowerCase() === word.toLowerCase().trim()) {
-                    return; // Word already exists, don't add it again
-                }
-            }
-
+        function addBanword(word) {
+            word = word.trim();
+            if (!word) return;
+            const exists = Array.from(container.querySelectorAll('.banword-tag'))
+                .some(function (t) { return t.dataset.word.toLowerCase() === word.toLowerCase(); });
+            if (exists) return;
             const tag = document.createElement('span');
-            tag.className = 'badge bg-secondary me-1 mb-1 banword-tag';
-            tag.dataset.word = word.trim();
-            tag.innerHTML = `${word.trim()} <i class="bi bi-x-circle" style="cursor: pointer;"></i>`;
-
-            // Add click event to remove the tag
-            tag.querySelector('i').addEventListener('click', function () {
-                tag.remove();
-                updateHiddenInput();
-            });
-
-            banwordsContainer.appendChild(tag);
-            updateHiddenInput();
+            tag.className = 'chip banword-tag';
+            tag.dataset.word = word;
+            tag.append(word + ' ');
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'chip-x';
+            remove.setAttribute('aria-label', 'Remove ' + word);
+            remove.innerHTML = '<i class="bi bi-x-lg"></i>';
+            remove.addEventListener('click', function () { tag.remove(); syncHidden(); });
+            tag.appendChild(remove);
+            container.appendChild(tag);
+            syncHidden();
         }
 
-        // Function to update the hidden input with all banwords
-        function updateHiddenInput() {
-            const tags = banwordsContainer.querySelectorAll('.banword-tag');
-            const words = Array.from(tags).map(tag => tag.dataset.word);
-            banwordsHiddenInput.value = words.join('|||');
-        }
-
-        // Add banword when clicking the Add button
-        addBanwordBtn.addEventListener('click', function () {
-            createBanwordTag(banwordsInput.value);
-            banwordsInput.value = '';
-            banwordsInput.focus();
+        document.getElementById('add-banword-btn').addEventListener('click', function () {
+            addBanword(input.value);
+            input.value = '';
+            input.focus();
         });
-
-        // Add banword when pressing Enter in the input field
-        banwordsInput.addEventListener('keypress', function (e) {
+        input.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                createBanwordTag(banwordsInput.value);
-                banwordsInput.value = '';
+                addBanword(input.value);
+                input.value = '';
             }
         });
-
-        // Initialize banwords from the hidden input
-        if (banwordsHiddenInput.value) {
-            const initialBanwords = banwordsHiddenInput.value.split('|||');
-            initialBanwords.forEach(word => {
-                if (word.trim()) {
-                    createBanwordTag(word);
-                }
-            });
-        }
+        if (hidden.value) hidden.value.split('|||').forEach(addBanword);
     });
 </script>
 {% endblock %}

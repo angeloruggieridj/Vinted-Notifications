@@ -38,6 +38,8 @@ def ensure_schema():
             conn.execute("ALTER TABLE queries ADD COLUMN min_stars REAL")
         if "min_reviews" not in cols:
             conn.execute("ALTER TABLE queries ADD COLUMN min_reviews INTEGER")
+        if "max_price" not in cols:
+            conn.execute("ALTER TABLE queries ADD COLUMN max_price REAL")
         item_cols = [r[1] for r in conn.execute("PRAGMA table_info(items)")]
         for col, col_type in (
             ("seller_id", "INTEGER"),
@@ -47,6 +49,8 @@ def ensure_schema():
         ):
             if col not in item_cols:
                 conn.execute(f"ALTER TABLE items ADD COLUMN {col} {col_type}")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_query ON items (query_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_items_timestamp ON items (timestamp)")
         conn.commit()
     except Exception:
         print_exc()
@@ -55,20 +59,21 @@ def ensure_schema():
             conn.close()
 
 
-def get_query_seller_filters(query_id):
-    """(min_stars, min_reviews) required for a query; each is None if not set."""
+def get_query_filters(query_id):
+    """(min_stars, min_reviews, max_price) set on a query; each is None if not set."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         row = conn.execute(
-            "SELECT min_stars, min_reviews FROM queries WHERE id=?", (query_id,)
+            "SELECT min_stars, min_reviews, max_price FROM queries WHERE id=?",
+            (query_id,),
         ).fetchone()
         if not row:
-            return None, None
-        return row[0] or None, row[1] or None
+            return None, None, None
+        return row[0] or None, row[1] or None, row[2] or None
     except Exception:
         print_exc()
-        return None, None
+        return None, None, None
     finally:
         if conn:
             conn.close()
@@ -176,10 +181,28 @@ def get_queries():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT id, query, last_item, query_name, min_stars, min_reviews FROM queries")
+        cursor.execute("SELECT id, query, last_item, query_name, min_stars, min_reviews, max_price FROM queries")
         return cursor.fetchall()
     except Exception:
         print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_queries_overview():
+    """Queries with their filters plus how many items they collected and the average price."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        return conn.execute(
+            "SELECT q.id, q.query, q.query_name, q.last_item, q.min_stars, q.min_reviews, q.max_price, "
+            "COUNT(i.item), AVG(i.price) FROM queries q LEFT JOIN items i ON i.query_id = q.id "
+            "GROUP BY q.id ORDER BY q.id"
+        ).fetchall()
+    except Exception:
+        print_exc()
+        return []
     finally:
         if conn:
             conn.close()
@@ -206,14 +229,16 @@ def is_query_in_db(processed_query):
             conn.close()
 
 
-def add_query_to_db(query, name=None, min_stars=None, min_reviews=None):
+def add_query_to_db(
+    query, name=None, min_stars=None, min_reviews=None, max_price=None
+):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews) VALUES (?, NULL, ?, ?, ?)",
-            (query, name or None, min_stars, min_reviews),
+            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews, max_price) VALUES (?, NULL, ?, ?, ?, ?)",
+            (query, name or None, min_stars, min_reviews, max_price),
         )
         conn.commit()
     except Exception:
@@ -276,7 +301,9 @@ def remove_all_queries_from_db():
             conn.close()
 
 
-def update_query_in_db(query_id, query, name, min_stars=None, min_reviews=None):
+def update_query_in_db(
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None
+):
     """
     Update an existing query in the database.
 
@@ -286,6 +313,7 @@ def update_query_in_db(query_id, query, name, min_stars=None, min_reviews=None):
         name (str, optional): The new name for the query
         min_stars (float, optional): Minimum seller stars (0-5)
         min_reviews (int, optional): Minimum number of seller reviews
+        max_price (float, optional): Maximum item price
 
     Returns:
         bool: True if the query was updated successfully, False otherwise
@@ -295,8 +323,8 @@ def update_query_in_db(query_id, query, name, min_stars=None, min_reviews=None):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=? WHERE id=?",
-            (query, name, min_stars, min_reviews, query_id),
+            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=?, max_price=? WHERE id=?",
+            (query, name, min_stars, min_reviews, max_price, query_id),
         )
         conn.commit()
         return True
@@ -416,24 +444,10 @@ def get_all_parameters():
             conn.close()
 
 
-def get_items(limit=50):
-    """Most recent stored items (used by the dashboard)."""
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, i.photo_url, q.query_name FROM items i JOIN queries q ON i.query_id = q.id ORDER BY i.timestamp DESC LIMIT ?",
-            (limit,),
-        )
-        return cursor.fetchall()
-    except Exception:
-        print_exc()
-        return []
-    finally:
-        if conn:
-            conn.close()
-
+# A listing counts as a deal when it is at least 20% under the average price of what the same
+# query has collected so far, and only once there is enough history to make that meaningful.
+DEAL_RATIO = 0.8
+DEAL_MIN_HISTORY = 10
 
 ITEM_SORTS = {
     "newest": "i.timestamp DESC",
@@ -494,6 +508,7 @@ def search_items(
     since=None,
     sort="newest",
     offset=0,
+    deals_only=False,
 ):
     """
     Search stored items with optional filters.
@@ -501,7 +516,7 @@ def search_items(
     Returns:
         tuple: (rows, total_matching) where each row is
         (item, title, price, currency, timestamp, query_url, photo_url, query_name,
-         seller_login, seller_stars, seller_reviews)
+         seller_login, seller_stars, seller_reviews, query_avg_price, query_history_size)
     """
     conn = None
     try:
@@ -531,13 +546,21 @@ def search_items(
         if since is not None:
             where.append("i.timestamp >= ?")
             params.append(since)
+        if deals_only:
+            where.append("s.n >= ? AND i.price <= s.avg_price * ?")
+            params.extend([DEAL_MIN_HISTORY, DEAL_RATIO])
         where_sql = (" WHERE " + " AND ".join(where)) if where else ""
         order_sql = ITEM_SORTS.get(sort, ITEM_SORTS["newest"])
-        base = "FROM items i JOIN queries q ON i.query_id = q.id" + where_sql
+        base = (
+            "FROM items i JOIN queries q ON i.query_id = q.id "
+            "JOIN (SELECT query_id, AVG(price) AS avg_price, COUNT(*) AS n FROM items "
+            "GROUP BY query_id) s ON s.query_id = i.query_id" + where_sql
+        )
         total = conn.execute("SELECT COUNT(*) " + base, params).fetchone()[0]
         rows = conn.execute(
             "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, "
-            "i.photo_url, q.query_name, i.seller_login, i.seller_stars, i.seller_reviews "
+            "i.photo_url, q.query_name, i.seller_login, i.seller_stars, i.seller_reviews, "
+            "s.avg_price, s.n "
             + base
             + f" ORDER BY {order_sql}, i.timestamp DESC LIMIT ? OFFSET ?",
             params + [limit, offset],
@@ -576,23 +599,6 @@ def get_total_queries_count():
     except Exception:
         print_exc()
         return 0
-    finally:
-        if conn:
-            conn.close()
-
-
-def get_last_found_item():
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, i.photo_url FROM items i JOIN queries q ON i.query_id = q.id ORDER BY i.timestamp DESC LIMIT 1"
-        )
-        return cursor.fetchone()
-    except Exception:
-        print_exc()
-        return None
     finally:
         if conn:
             conn.close()

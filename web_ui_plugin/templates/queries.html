@@ -3,258 +3,165 @@
 {% block title %}Queries - Vinted Notifications{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+<div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
     <h1 class="h2">Queries</h1>
+    <button type="button" class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newQuery"
+            aria-expanded="{{ 'true' if not queries else 'false' }}" aria-controls="newQuery">
+        <i class="bi bi-plus-lg me-1"></i> New query
+    </button>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex align-items-center">
-                <i class="bi bi-plus-circle me-2 text-info"></i>
-                <h5 class="card-title mb-0">Add New Query</h5>
+<div class="collapse {% if not queries %}show{% endif %}" id="newQuery">
+    <form action="/add_query" method="post" class="panel query-form">
+        <div class="mb-3">
+            <label for="query" class="form-label">Vinted search URL</label>
+            <input type="url" class="form-control" id="query" name="query" required
+                   placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes"
+                   pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
+            <div class="form-text">Run the search on Vinted with your filters, then paste the page address here.</div>
+        </div>
+        <div class="query-fields">
+            <div>
+                <label for="query_name" class="form-label">Name</label>
+                <input type="text" class="form-control" id="query_name" name="query_name" placeholder="Optional">
             </div>
-            <div class="card-body">
-                <form action="/add_query" method="post">
-                    <div class="row g-3">
+            <div>
+                <label for="max_price" class="form-label">Max price</label>
+                <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" placeholder="No limit">
+            </div>
+            <div>
+                <label for="min_stars" class="form-label">Min seller stars</label>
+                <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" placeholder="Any">
+            </div>
+            <div>
+                <label for="min_reviews" class="form-label">Min seller reviews</label>
+                <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" placeholder="Any">
+            </div>
+            <div class="align-self-end">
+                <button type="submit" class="btn btn-primary w-100">Add query</button>
+            </div>
+        </div>
+        <div class="form-text mt-2">Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.</div>
+    </form>
+</div>
 
-                        <!-- Vinted URL (required) -->
-                        <div class="col-md-4">
-                            <label for="query" class="form-label">Vinted search URL <span
-                                    class="text-danger">*</span></label>
-                            <input type="url"
-                                   class="form-control"
-                                   id="query"
-                                   name="query"
-                                   placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes"
-                                   required
+<div class="qlist">
+    {% for query in queries %}
+    <article class="qcard">
+        <div class="qmain">
+            <h2 class="qname">{{ query.display }}</h2>
+            <a class="qurl" href="{{ query.query }}" target="_blank" rel="noopener" title="{{ query.query }}">{{ query.query|replace('https://', '')|truncate(70) }} <i class="bi bi-box-arrow-up-right"></i></a>
+            <div class="qchips">
+                {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> up to {{ query.max_price }}</span>{% endif %}
+                {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ query.min_stars }}+ stars</span>{% endif %}
+                {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ query.min_reviews }}+ reviews</span>{% endif %}
+                {% if not (query.max_price or query.min_stars or query.min_reviews) %}<span class="chip chip-empty">No filters</span>{% endif %}
+            </div>
+        </div>
+        <dl class="qstats">
+            <div><dt>Items</dt><dd>{{ query.item_count }}</dd></div>
+            <div><dt>Average price</dt><dd>{{ query.avg_price if query.avg_price else '-' }}</dd></div>
+            <div><dt>Last found</dt><dd>{% if query.last_ts %}<time class="local-ts" data-rel="1" data-ts="{{ query.last_ts }}">{{ query.last_found_item }}</time>{% else %}Never{% endif %}</dd></div>
+        </dl>
+        <div class="qactions">
+            <a href="/items?query={{ query.query_id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-bag me-1"></i> Items</a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ query.id }}"><i class="bi bi-pencil me-1"></i> Edit</button>
+            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ query.id }}" aria-label="Remove {{ query.display }}"><i class="bi bi-trash3"></i></button>
+        </div>
+
+        <!-- Edit modal -->
+        <div class="modal fade" id="editModal{{ query.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ query.id }}" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form class="modal-content" action="/update_query/{{ query.query_id }}" method="post">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="editModalLabel{{ query.id }}">Edit query</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label for="query{{ query.id }}" class="form-label">Vinted search URL</label>
+                            <input type="url" class="form-control" id="query{{ query.id }}" name="query" value="{{ query.query }}" required
                                    pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
-                            <div class="form-text">
-                                Paste a valid Vinted search URL (e.g.&nbsp;`https://www.vinted.fr/catalog?...`)
+                        </div>
+                        <div class="mb-3">
+                            <label for="query_name{{ query.id }}" class="form-label">Name</label>
+                            <input type="text" class="form-control" id="query_name{{ query.id }}" name="query_name" value="{{ query.name }}" placeholder="Optional">
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-4">
+                                <label for="max_price{{ query.id }}" class="form-label">Max price</label>
+                                <input type="number" class="form-control" id="max_price{{ query.id }}" name="max_price" min="0" step="any" value="{{ query.max_price }}" placeholder="No limit">
+                            </div>
+                            <div class="col-4">
+                                <label for="min_stars{{ query.id }}" class="form-label">Min stars</label>
+                                <input type="number" class="form-control" id="min_stars{{ query.id }}" name="min_stars" min="0" max="5" step="0.1" value="{{ query.min_stars }}" placeholder="Any">
+                            </div>
+                            <div class="col-4">
+                                <label for="min_reviews{{ query.id }}" class="form-label">Min reviews</label>
+                                <input type="number" class="form-control" id="min_reviews{{ query.id }}" name="min_reviews" min="0" step="1" value="{{ query.min_reviews }}" placeholder="Any">
                             </div>
                         </div>
-
-                        <!-- Name (optional) -->
-                        <div class="col-md-2">
-                            <label for="query_name" class="form-label">Name&nbsp;<span
-                                    class="text-muted">(optional)</span></label>
-                            <input type="text"
-                                   class="form-control"
-                                   id="query_name"
-                                   name="query_name"
-                                   placeholder="My search">
-                        </div>
-
-                        <!-- Minimum seller stars (optional) -->
-                        <div class="col-md-2">
-                            <label for="min_stars" class="form-label">Min. seller stars&nbsp;<span
-                                    class="text-muted">(optional)</span></label>
-                            <input type="number" class="form-control" id="min_stars" name="min_stars"
-                                   min="0" max="5" step="0.1" placeholder="e.g. 4.5">
-                            <div class="form-text">0-5, skips new/unrated sellers</div>
-                        </div>
-
-                        <!-- Minimum seller reviews (optional) -->
-                        <div class="col-md-2">
-                            <label for="min_reviews" class="form-label">Min. reviews</label>
-                            <input type="number" class="form-control" id="min_reviews" name="min_reviews"
-                                   min="0" step="1" placeholder="e.g. 5">
-                        </div>
-
-                        <div class="col-md-2 d-flex align-items-center">
-                            <button type="submit" class="btn btn-primary w-100">Add Query</button>
-                        </div>
                     </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save changes</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Delete modal -->
+        <div class="modal fade" id="deleteModal{{ query.id }}" tabindex="-1" aria-labelledby="deleteModalLabel{{ query.id }}" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="deleteModalLabel{{ query.id }}">Remove query</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        Remove <strong>{{ query.display }}</strong> and the {{ query.item_count }} item{{ '' if query.item_count == 1 else 's' }} it collected?
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <form action="/remove_query/{{ query.query_id }}" method="post" class="d-inline">
+                            <button type="submit" class="btn btn-danger">Remove query</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </article>
+    {% else %}
+    <div class="empty panel">
+        <i class="bi bi-search"></i>
+        <strong>No queries yet</strong>
+        Paste a Vinted search URL above and new listings will start showing up here.
+    </div>
+    {% endfor %}
+</div>
+
+{% if queries %}
+<div class="danger-zone">
+    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
+        <i class="bi bi-trash3 me-1"></i> Remove all queries
+    </button>
+</div>
+<div class="modal fade" id="deleteAllModal" tabindex="-1" aria-labelledby="deleteAllModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteAllModalLabel">Remove all queries</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">This removes <strong>every</strong> query and all collected items. It cannot be undone.</div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="/remove_query/all" method="post" class="d-inline">
+                    <button type="submit" class="btn btn-danger">Remove everything</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
-
-<div class="row">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex align-items-center">
-                <i class="bi bi-search me-2 text-info"></i>
-                <h5 class="card-title mb-0">Current Queries</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Query</th>
-                            <th>Min. Stars</th>
-                            <th>Min. Reviews</th>
-                            <th>Last Found Item</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {% for query in queries %}
-                        <tr>
-                            <td>{{ query.id }}</td>
-                            <td>{{ query.display }}</td>
-                            <td>{% if query.min_stars %}<i class="bi bi-star-fill text-warning"></i> {{ query.min_stars }}{% else %}-{% endif %}</td>
-                            <td>{{ query.min_reviews if query.min_reviews else '-' }}</td>
-                            <td>{{ query.last_found_item }}</td>
-                            <td>
-                                <div class="btn-group" role="group">
-                                    <a href="/items?query={{ query.query_id }}"
-                                       class="btn btn-sm btn-outline-primary">
-                                        <i class="bi bi-box"></i> View Items
-                                    </a>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#editModal{{ query.id }}">
-                                        <i class="bi bi-pencil"></i> Edit
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal"
-                                            data-bs-target="#deleteModal{{ query.id }}">
-                                        <i class="bi bi-trash"></i> Remove
-                                    </button>
-                                </div>
-
-                                <!-- Edit Modal -->
-                                <div class="modal fade" id="editModal{{ query.id }}" tabindex="-1"
-                                     aria-labelledby="editModalLabel{{ query.id }}" aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h5 class="modal-title" id="editModalLabel{{ query.id }}">Edit
-                                                    Query</h5>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                        aria-label="Close"></button>
-                                            </div>
-                                            <form action="/update_query/{{ query.query_id }}" method="post">
-                                                <div class="modal-body">
-                                                    <div class="mb-3">
-                                                        <label for="query{{ query.id }}" class="form-label">Vinted
-                                                            search URL <span class="text-danger">*</span></label>
-                                                        <input type="url"
-                                                               class="form-control"
-                                                               id="query{{ query.id }}"
-                                                               name="query"
-                                                               value="{{ query.query }}"
-                                                               placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes"
-                                                               required
-                                                               pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label for="query_name{{ query.id }}" class="form-label">Name
-                                                            <span class="text-danger">*</span></label>
-                                                        <input type="text"
-                                                               class="form-control"
-                                                               id="query_name{{ query.id }}"
-                                                               name="query_name"
-                                                               value="{{ query.display if query.display != query.query else '' }}"
-                                                               required
-                                                               placeholder="My search">
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label for="min_stars{{ query.id }}" class="form-label">Min.
-                                                            seller stars <span class="text-muted">(optional)</span></label>
-                                                        <input type="number" class="form-control"
-                                                               id="min_stars{{ query.id }}" name="min_stars"
-                                                               min="0" max="5" step="0.1"
-                                                               value="{{ query.min_stars }}" placeholder="e.g. 4.5">
-                                                        <div class="form-text">0-5. Items from sellers with a lower
-                                                            rating (or no feedback yet) are skipped.</div>
-                                                    </div>
-                                                    <div class="mb-3">
-                                                        <label for="min_reviews{{ query.id }}" class="form-label">Min.
-                                                            seller reviews <span class="text-muted">(optional)</span></label>
-                                                        <input type="number" class="form-control"
-                                                               id="min_reviews{{ query.id }}" name="min_reviews"
-                                                               min="0" step="1"
-                                                               value="{{ query.min_reviews }}" placeholder="e.g. 5">
-                                                        <div class="form-text">Items from sellers with fewer reviews
-                                                            are skipped.</div>
-                                                    </div>
-                                                </div>
-                                                <div class="modal-footer">
-                                                    <button type="button" class="btn btn-secondary"
-                                                            data-bs-dismiss="modal">
-                                                        Cancel
-                                                    </button>
-                                                    <button type="submit" class="btn btn-primary">Save Changes</button>
-                                                </div>
-                                            </form>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Delete Modal -->
-                                <div class="modal fade" id="deleteModal{{ query.id }}" tabindex="-1"
-                                     aria-labelledby="deleteModalLabel{{ query.id }}" aria-hidden="true">
-                                    <div class="modal-dialog">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h5 class="modal-title" id="deleteModalLabel{{ query.id }}">Confirm
-                                                    Deletion</h5>
-                                                <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                                        aria-label="Close"></button>
-                                            </div>
-                                            <div class="modal-body">
-                                                Are you sure you want to remove the query: <strong>{{ query.display
-                                                }}</strong>?
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                                    Cancel
-                                                </button>
-                                                <form action="/remove_query/{{ query.query_id }}" method="post"
-                                                      class="d-inline">
-                                                    <button type="submit" class="btn btn-danger">Remove</button>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="4" class="text-center">No queries found</td>
-                        </tr>
-                        {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% if queries %}
-            <div class="card-footer">
-                <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
-                    <i class="bi bi-trash"></i> Remove All Queries
-                </button>
-
-                <!-- Delete All Modal -->
-                <div class="modal fade" id="deleteAllModal" tabindex="-1" aria-labelledby="deleteAllModalLabel"
-                     aria-hidden="true">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title" id="deleteAllModalLabel">Confirm Deletion</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                        aria-label="Close"></button>
-                            </div>
-                            <div class="modal-body">
-                                Are you sure you want to remove <strong>ALL</strong> queries? This action cannot be
-                                undone.
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <form action="/remove_query/all" method="post" class="d-inline">
-                                    <button type="submit" class="btn btn-danger">Remove All</button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-    </div>
-</div>
+{% endif %}
 {% endblock %}

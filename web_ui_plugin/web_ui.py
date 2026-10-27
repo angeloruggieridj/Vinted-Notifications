@@ -1,8 +1,21 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    jsonify,
+    session,
+)
+from werkzeug.security import check_password_hash, generate_password_hash
 import db
 import core
+import hashlib
+import hmac
 import os
 import re
+import secrets
 import time
 import zoneinfo
 from urllib.parse import urlparse, parse_qs
@@ -21,8 +34,137 @@ app = Flask(
     static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"),
 )
 
-# Secret key for session management
-app.secret_key = os.urandom(24)
+# The secret key is stored so that logins survive restarts
+_secret = db.get_parameter("web_secret_key")
+if not _secret:
+    _secret = secrets.token_hex(32)
+    db.set_parameter("web_secret_key", _secret)
+app.secret_key = _secret
+app.config.update(
+    SESSION_COOKIE_NAME="vn_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
+)
+
+# ------------------------------------------------------------------ authentication
+# Optional password for the whole web UI. Set it from Configuration > Security, or with the
+# VN_WEB_PASSWORD environment variable (which takes precedence, handy if the password is lost).
+MAX_LOGIN_FAILURES = 5
+LOGIN_LOCK_SECONDS = 60
+MIN_PASSWORD_LENGTH = 8
+_login_failures = {}  # ip -> (failures, locked_until)
+
+
+def _env_password():
+    return os.environ.get("VN_WEB_PASSWORD", "")
+
+
+def _password_hash():
+    return db.get_parameter("web_password_hash") or ""
+
+
+def auth_enabled():
+    return bool(_env_password() or _password_hash())
+
+
+def _auth_token():
+    """Changes whenever the password does, which logs out every other session."""
+    secret = _env_password() or _password_hash()
+    return hashlib.sha256(secret.encode()).hexdigest()[:24]
+
+
+def _check_password(candidate):
+    env = _env_password()
+    if env:
+        return hmac.compare_digest(env.encode(), candidate.encode())
+    stored = _password_hash()
+    return bool(stored) and check_password_hash(stored, candidate)
+
+
+def _safe_next(target):
+    """Only follow same-site relative redirects after login."""
+    if target and target.startswith("/") and not target.startswith("//"):
+        return target
+    return url_for("index")
+
+
+@app.before_request
+def require_login():
+    if not auth_enabled() or request.endpoint in ("static", "login"):
+        return None
+    if session.get("auth") == _auth_token():
+        return None
+    if request.headers.get("X-Requested-With") == "fetch" or request.path.startswith(
+        "/control"
+    ):
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    return redirect(url_for("login", next=request.full_path.rstrip("?")))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not auth_enabled():
+        return redirect(url_for("index"))
+    ip = request.remote_addr or "?"
+    failures, locked_until = _login_failures.get(ip, (0, 0))
+    error = None
+    if request.method == "POST":
+        if locked_until > time.time():
+            error = f"Too many attempts. Try again in {int(locked_until - time.time()) + 1} seconds."
+        elif _check_password(request.form.get("password", "")):
+            _login_failures.pop(ip, None)
+            session.clear()
+            session["auth"] = _auth_token()
+            session.permanent = True
+            return redirect(_safe_next(request.form.get("next")))
+        else:
+            failures += 1
+            locked_until = time.time() + LOGIN_LOCK_SECONDS if failures >= MAX_LOGIN_FAILURES else 0
+            _login_failures[ip] = (0 if locked_until else failures, locked_until)
+            error = "Wrong password."
+    return render_template(
+        "login.html", error=error, next=request.values.get("next", "")
+    ), (429 if error and locked_until > time.time() else 200)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/security/password", methods=["POST"])
+def set_password():
+    if _env_password():
+        flash("The password is managed by the VN_WEB_PASSWORD environment variable.", "warning")
+        return redirect(url_for("config", _anchor="security"))
+    if _password_hash() and not _check_password(request.form.get("current_password", "")):
+        flash("Current password is wrong.", "danger")
+        return redirect(url_for("config", _anchor="security"))
+    new = request.form.get("new_password", "")
+    if len(new) < MIN_PASSWORD_LENGTH:
+        flash(f"Use at least {MIN_PASSWORD_LENGTH} characters.", "danger")
+    elif new != request.form.get("confirm_password", ""):
+        flash("The two passwords do not match.", "danger")
+    else:
+        db.set_parameter("web_password_hash", generate_password_hash(new))
+        session["auth"] = _auth_token()  # keep this browser logged in
+        session.permanent = True
+        flash("Password saved. Other browsers have been logged out.", "success")
+    return redirect(url_for("config", _anchor="security"))
+
+
+@app.route("/security/password/remove", methods=["POST"])
+def remove_password():
+    if _env_password():
+        flash("The password is managed by the VN_WEB_PASSWORD environment variable.", "warning")
+    elif not _check_password(request.form.get("current_password", "")):
+        flash("Current password is wrong.", "danger")
+    else:
+        db.set_parameter("web_password_hash", "")
+        flash("Password removed. The web interface is open to anyone who can reach it.", "warning")
+    return redirect(url_for("config", _anchor="security"))
 
 
 _version_cache = {"at": 0, "value": None}
@@ -52,6 +194,7 @@ def inject_current_year():
     return {
         "current_year": datetime.now().year,
         "display_tz": db.get_parameter("timezone") or "",
+        "auth_enabled": auth_enabled(),
     }
 
 
@@ -90,94 +233,12 @@ def _setting_int(name, default):
         return default
 
 
-@app.route("/")
-def index():
-    # Get parameters
-    params = db.get_all_parameters()
-
-    # Get queries
-    queries = db.get_queries()
-    formatted_queries = []
-    for i, query in enumerate(queries):
-        parsed_query = urlparse(query[1])
-        query_params = parse_qs(parsed_query.query)
-        query_name = (
-            query[3]
-            if query[3] is not None
-            else query_params.get("search_text", [None])[0]
-        )
-
-        # Get the last timestamp for this query
-        try:
-            last_timestamp = db.get_last_timestamp(query[0])
-            last_found_item = format_ts(last_timestamp)
-        except Exception as e:
-            logger.debug(f"Error getting last timestamp for query {query[0]}: {e}")
-            last_found_item = "Never"
-
-        formatted_queries.append(
-            {
-                "id": i + 1,
-                "query_id": query[0],
-                "query": query[1],
-                "display": query_name if query_name else query[1],
-                "last_found_item": last_found_item,
-                "min_stars": query[4] or "",
-                "min_reviews": query[5] or "",
-            }
-        )
-
-    # Get recent items
-    items = db.get_items(limit=10)
-    formatted_items = []
-    for item in items:
-        formatted_items.append(
-            {
-                "title": item[1],
-                "price": item[2],
-                "currency": item[3],
-                "timestamp": format_ts(item[4]),
-                "query": item[5],
-                "photo_url": item[6],
-                "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
-            }
-        )
-
-    # Get process status from the database
-    telegram_running = db.get_parameter("telegram_process_running") == "True"
-    rss_running = db.get_parameter("rss_process_running") == "True"
-
-    # Get statistics for the dashboard
-    stats = {
-        "total_items": db.get_total_items_count(),
-        "total_queries": db.get_total_queries_count(),
-        "items_per_day": db.get_items_per_day(),
-    }
-
-    # Get the last found item
-    last_item = db.get_last_found_item()
-    if last_item:
-        stats["last_item"] = {
-            "title": last_item[1],
-            "price": last_item[2],
-            "currency": last_item[3],
-            "timestamp": format_ts(last_item[4]),
-            "query": last_item[5],
-            "photo_url": last_item[6],
-            "url": f"{urlparse(last_item[5]).scheme}://{urlparse(last_item[5]).netloc}/items/{last_item[0]}"
-        }
-    else:
-        stats["last_item"] = None
-
-    return render_template(
-        "index.html",
-        params=params,
-        queries=formatted_queries,
-        items=formatted_items,
-        telegram_running=telegram_running,
-        rss_running=rss_running,
-        stats=stats,
-    )
+def parse_max_price(value):
+    """Parse the optional maximum-price form value; None if empty/invalid/<=0."""
+    try:
+        return max(0.0, float(str(value).replace(",", "."))) or None
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_min_reviews(value):
@@ -197,41 +258,88 @@ def parse_min_stars(value):
     return min(5.0, max(0.0, stars)) or None
 
 
-@app.route("/queries")
-def queries():
-    # Get queries
-    all_queries = db.get_queries()
-    formatted_queries = []
-    for i, query in enumerate(all_queries):
-        parsed_query = urlparse(query[1])
-        query_params = parse_qs(parsed_query.query)
-        query_name = (
-            query[3]
-            if query[3] is not None
-            else query_params.get("search_text", [None])[0]
-        )
+def _query_display(url, name):
+    return name or parse_qs(urlparse(url).query).get("search_text", [None])[0] or url
 
-        # Get the last timestamp for this query
-        try:
-            last_timestamp = db.get_last_timestamp(query[0])
-            last_found_item = format_ts(last_timestamp)
-        except Exception as e:
-            logger.debug(f"Error getting last timestamp for query {query[0]}: {e}")
-            last_found_item = "Never"
 
-        formatted_queries.append(
+def _format_item(item):
+    """Template-ready dict from a db.search_items row."""
+    search_text = parse_qs(urlparse(item[5]).query).get("search_text", [None])[0]
+    avg, history = item[11], item[12]
+    deal_pct = None
+    try:
+        if avg and history >= db.DEAL_MIN_HISTORY and float(item[2]) <= avg * db.DEAL_RATIO:
+            deal_pct = round((1 - float(item[2]) / avg) * 100)
+    except (TypeError, ValueError):
+        pass
+    return {
+        "title": item[1],
+        "price": item[2],
+        "currency": item[3],
+        # Epoch is formatted in the browser; the string is the no-JavaScript fallback.
+        "ts": item[4],
+        "timestamp": format_ts(item[4]),
+        "query": item[7] or search_text or item[5],
+        "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
+        "photo_url": item[6],
+        "seller_login": item[8],
+        "seller_stars": item[9],
+        "seller_reviews": item[10],
+        "avg_price": round(avg, 2) if avg else None,
+        "deal_pct": deal_pct,
+    }
+
+
+def _queries_overview():
+    """Queries with filters, collected-item count, average price and last-found time."""
+    overview = []
+    for i, q in enumerate(db.get_queries_overview(), start=1):
+        overview.append(
             {
-                "id": i + 1,
-                "query_id": query[0],
-                "query": query[1],
-                "display": query_name if query_name else query[1],
-                "last_found_item": last_found_item,
-                "min_stars": query[4] or "",
-                "min_reviews": query[5] or "",
+                "id": i,
+                "query_id": q[0],
+                "query": q[1],
+                "display": _query_display(q[1], q[2]),
+                "name": q[2] or "",
+                "last_ts": q[3],
+                "last_found_item": format_ts(q[3]) if q[3] else "Never",
+                "min_stars": q[4] or "",
+                "min_reviews": q[5] or "",
+                "max_price": ("%g" % q[6]) if q[6] else "",
+                "item_count": q[7],
+                "avg_price": round(q[8], 2) if q[8] else None,
             }
         )
+    return overview
 
-    return render_template("queries.html", queries=formatted_queries)
+
+@app.route("/")
+def index():
+    params = db.get_all_parameters()
+    latest, _ = db.search_items(limit=8)
+    deals_today = db.search_items(
+        limit=1, since=int(time.time()) - 86400, deals_only=True
+    )[1]
+    stats = {
+        "total_items": db.get_total_items_count(),
+        "total_queries": db.get_total_queries_count(),
+        "items_per_day": db.get_items_per_day(),
+        "deals_today": deals_today,
+    }
+    return render_template(
+        "index.html",
+        params=params,
+        queries=_queries_overview(),
+        items=[_format_item(row) for row in latest],
+        telegram_running=params.get("telegram_process_running") == "True",
+        rss_running=params.get("rss_process_running") == "True",
+        stats=stats,
+    )
+
+
+@app.route("/queries")
+def queries():
+    return render_template("queries.html", queries=_queries_overview())
 
 
 @app.route("/add_query", methods=["POST"])
@@ -244,6 +352,7 @@ def add_query():
             name=query_name if query_name != "" else None,
             min_stars=parse_min_stars(request.form.get("min_stars")),
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
+            max_price=parse_max_price(request.form.get("max_price")),
         )
         if is_new_query:
             flash(f"Query added: {query}", "success")
@@ -289,6 +398,7 @@ def update_query(query_id):
             name=query_name if query_name != "" else None,
             min_stars=parse_min_stars(request.form.get("min_stars")),
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
+            max_price=parse_max_price(request.form.get("max_price")),
         )
         if success:
             flash("Query updated", "success")
@@ -346,6 +456,7 @@ def _items_context():
         "min_reviews": request.args.get("min_reviews", ""),
         "period": request.args.get("period", ""),
         "sort": request.args.get("sort", "newest"),
+        "deals": "1" if request.args.get("deals") else "",
     }
     since = (
         int(time.time()) - PERIODS[filters["period"]]
@@ -362,6 +473,7 @@ def _items_context():
         min_reviews=_int_arg("min_reviews"),
         since=since,
         sort=filters["sort"],
+        deals_only=bool(filters["deals"]),
     )
     page = max(1, _int_arg("page", 1))
     items_data, total = db.search_items(
@@ -374,39 +486,20 @@ def _items_context():
             limit=per_page, offset=(page - 1) * per_page, **search
         )
 
-    formatted_items = []
-    for item in items_data:
-        search_text = parse_qs(urlparse(item[5]).query).get("search_text", [None])[0]
-        formatted_items.append(
-            {
-                "title": item[1],
-                "price": item[2],
-                "currency": item[3],
-                # Epoch is formatted in the browser; the string is the no-JavaScript fallback.
-                "ts": item[4],
-                "timestamp": format_ts(item[4]),
-                "query": item[7] or search_text or item[5],
-                "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
-                "photo_url": item[6],
-                "seller_login": item[8],
-                "seller_stars": item[9],
-                "seller_reviews": item[10],
-            }
-        )
+    formatted_items = [_format_item(row) for row in items_data]
 
     # Queries for the filter dropdown
     formatted_queries = []
     selected_query_display = None
     for q in db.get_queries():
-        query_params = parse_qs(urlparse(q[1]).query)
-        display_name = q[3] or query_params.get("search_text", [None])[0] or q[1]
+        display_name = _query_display(q[1], q[3])
         if filters["query"] == str(q[0]):
             selected_query_display = display_name
         formatted_queries.append({"query_id": q[0], "display": display_name})
 
     active_filters = sum(
         1
-        for key in ("query", "q", "seller", "min_price", "max_price", "min_stars", "min_reviews", "period")
+        for key in ("query", "q", "seller", "min_price", "max_price", "min_stars", "min_reviews", "period", "deals")
         if filters[key]
     )
     return dict(
@@ -425,6 +518,7 @@ def _items_context():
         selected_query_display=selected_query_display,
         autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
         autorefresh_interval=max(5, _setting_int("query_refresh_delay", 60)),
+        deal_percent=round((1 - db.DEAL_RATIO) * 100),
     )
 
 
@@ -458,6 +552,9 @@ def config():
         "config.html",
         params=params,
         timezones=sorted(zoneinfo.available_timezones()),
+        password_set=bool(_password_hash()),
+        password_env=bool(_env_password()),
+        min_password_length=MIN_PASSWORD_LENGTH,
     )
 
 
