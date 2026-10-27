@@ -64,23 +64,24 @@
     </main>
 
     <footer class="page-foot">
-        <div class="foot-id">
+        <div class="foot-brand">
+            <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="22" height="22">
             <strong>Vinted Notifications</strong>
-            <span class="foot-meta">
-                {% if current_version is defined %}v{{ current_version }}{% endif %}
-                {% if is_up_to_date is defined %}
-                {% if is_up_to_date %}<span class="chip chip-ok">{{ _("Up to date") }}</span>
-                {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener">{{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
-                {% endif %}
-            </span>
         </div>
-        <nav class="foot-links" aria-label="{{ _('Links') }}">
+        <div class="foot-meta">
+            {% if current_version is defined %}<span>v{{ current_version }}</span>{% endif %}
+            {% if is_up_to_date is defined %}
+            {% if is_up_to_date %}<span class="chip chip-ok"><i class="bi bi-check-circle-fill"></i> {{ _("Up to date") }}</span>
+            {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener"><i class="bi bi-arrow-up-circle-fill"></i> {{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
+            {% endif %}
+        </div>
+        <nav class="foot-pills" aria-label="{{ _('Links') }}">
             {% if github_url is defined %}
             <a href="{{ github_url }}#readme" target="_blank" rel="noopener"><i class="bi bi-book"></i> {{ _("Documentation") }}</a>
             <a href="{{ github_url }}/issues" target="_blank" rel="noopener"><i class="bi bi-bug"></i> {{ _("Report an issue") }}</a>
             <a href="{{ github_url }}" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
             {% endif %}
-            <button type="button" class="foot-install js-install" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
+            <button type="button" class="js-install" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
         </nav>
         <p class="foot-legal">{{ _("Unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB.") }}</p>
     </footer>
@@ -97,6 +98,34 @@
     <a class="tab {% if path == '/queries' %}active{% endif %}" href="/queries"><i class="bi bi-search"></i><span>{{ _("Queries") }}</span></a>
     <a class="tab {% if path in ('/config', '/allowlist', '/logs') or path.startswith('/users') %}active{% endif %}" href="/config"><i class="bi bi-gear"></i><span>{{ _("Settings") }}</span></a>
 </nav>
+
+<!-- Welcome screen: shown once when the installed app is opened for the first time -->
+<div class="welcome" id="welcome" hidden role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
+    <div class="welcome-card">
+        <img class="welcome-logo" src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="Vinted" width="84" height="84">
+        <h2 id="welcomeTitle">{{ _("Welcome to Vinted Notifications") }}</h2>
+        <div class="welcome-track" id="welcomeTrack">
+            <section class="welcome-slide">
+                <span class="welcome-ico" style="--c: #007AFF"><i class="bi bi-search"></i></span>
+                <h3>{{ _("Follow any search") }}</h3>
+                <p>{{ _("Paste a Vinted search URL once and the app keeps watching it for new listings.") }}</p>
+            </section>
+            <section class="welcome-slide">
+                <span class="welcome-ico" style="--c: #FF3B30"><i class="bi bi-bell-fill"></i></span>
+                <h3>{{ _("Know the moment it appears") }}</h3>
+                <p>{{ _("Get a box here, a Telegram message or an RSS item as soon as something new matches.") }}</p>
+            </section>
+            <section class="welcome-slide">
+                <span class="welcome-ico" style="--c: #FFB800"><i class="bi bi-lightning-charge-fill"></i></span>
+                <h3>{{ _("Spot the good deals") }}</h3>
+                <p>{{ _("Listings priced well under the average, and sellers you can trust, are easy to find.") }}</p>
+            </section>
+        </div>
+        <div class="welcome-dots" aria-hidden="true"><span class="on"></span><span></span><span></span></div>
+        <button type="button" class="btn btn-primary welcome-next" id="welcomeNext" data-next="{{ _('Continue') }}" data-done="{{ _('Get started') }}">{{ _("Continue") }}</button>
+        <button type="button" class="welcome-skip" id="welcomeSkip">{{ _("Skip") }}</button>
+    </div>
+</div>
 
 <div class="flash-messages">
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -211,6 +240,56 @@
             });
         });
     });
+
+    // ---- Welcome screen (first launch of the installed app; "?welcome=1" or Settings shows it again) ----
+    (function () {
+        const KEY = 'vn-welcome';
+        document.addEventListener('DOMContentLoaded', function () {
+            const el = document.getElementById('welcome');
+            if (!el) return;
+            const track = document.getElementById('welcomeTrack');
+            const slides = el.querySelectorAll('.welcome-slide');
+            const dots = el.querySelectorAll('.welcome-dots span');
+            const next = document.getElementById('welcomeNext');
+            let index = 0;
+            const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+            const seen = function () { try { return localStorage.getItem(KEY) === '1'; } catch (e) { return false; } };
+
+            function update() {
+                dots.forEach(function (dot, i) { dot.classList.toggle('on', i === index); });
+                next.textContent = index === slides.length - 1 ? next.dataset.done : next.dataset.next;
+            }
+            function go(i) {
+                index = Math.max(0, Math.min(slides.length - 1, i));
+                track.scrollTo({left: index * track.clientWidth, behavior: 'smooth'});
+                update();
+            }
+            function open() {
+                index = 0;
+                track.scrollLeft = 0;
+                el.hidden = false;
+                document.body.classList.add('welcome-open');
+                update();
+                next.focus();
+            }
+            function close() {
+                try { localStorage.setItem(KEY, '1'); } catch (e) { /* ignore */ }
+                el.hidden = true;
+                document.body.classList.remove('welcome-open');
+            }
+
+            track.addEventListener('scroll', function () {
+                const i = Math.round(track.scrollLeft / track.clientWidth);
+                if (i !== index) { index = i; update(); }
+            }, {passive: true});
+            next.addEventListener('click', function () { if (index >= slides.length - 1) close(); else go(index + 1); });
+            document.getElementById('welcomeSkip').addEventListener('click', close);
+            document.addEventListener('keydown', function (e) { if (!el.hidden && e.key === 'Escape') close(); });
+            window.vnWelcome = {open: open};
+
+            if (/[?&]welcome=1/.test(location.search) || (standalone && !seen())) open();
+        });
+    })();
 </script>
 {% block scripts %}{% endblock %}
 </body>

@@ -291,6 +291,11 @@ MESSAGE = '''\
 This is an unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB; the "V" mark used for the app icon and
 sidebar comes from the [Simple Icons](https://simpleicons.org) project (the glyph is CC0, the brand stays Vinted's).
 
+## ℹ️ Trademark notice
+
+This is an unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB; the "V" mark used for the app icon and
+sidebar comes from the [Simple Icons](https://simpleicons.org) project (the glyph is CC0, the brand stays Vinted's).
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

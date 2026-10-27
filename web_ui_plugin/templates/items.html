@@ -118,6 +118,9 @@
     </div>
 </div>
 
+<!-- Pull to refresh (touch screens) -->
+<div class="ptr" id="ptr" aria-hidden="true"><i class="bi bi-arrow-down"></i></div>
+
 <div id="itemsResults">
     {% include "_items_results.html" %}
 </div>
@@ -396,6 +399,64 @@
                     refreshResults(true);
                 }
             }, 250);
+        }
+
+        // ---- Pull to refresh (touch screens): pull the list down from the top, release to refresh ----
+        const ptr = document.getElementById('ptr');
+        if ('ontouchstart' in window && ptr) {
+            document.body.classList.add('has-ptr');
+            const TRIGGER = 70, MAX = 120;
+            let startY = null, pull = 0, busy = false;
+
+            function showPull(distance) {
+                ptr.style.transform = 'translate(-50%, ' + (distance - 64) + 'px)';
+                ptr.style.opacity = Math.min(1, distance / TRIGGER);
+                ptr.firstElementChild.style.transform = 'rotate(' + (distance >= TRIGGER ? 180 : distance * 2.4) + 'deg)';
+                ptr.classList.toggle('ready', distance >= TRIGGER);
+            }
+            function hidePull() {
+                ptr.style.transition = 'transform .25s, opacity .25s';
+                showPull(0);
+                setTimeout(function () {
+                    ptr.style.transition = '';
+                    ptr.classList.remove('loading');
+                    ptr.firstElementChild.className = 'bi bi-arrow-down';
+                }, 260);
+            }
+
+            document.addEventListener('touchstart', function (e) {
+                const sheetOpen = document.querySelector('.modal.show');
+                startY = (window.scrollY <= 0 && e.touches.length === 1 && !busy && !sheetOpen) ? e.touches[0].clientY : null;
+                pull = 0;
+            }, {passive: true});
+
+            document.addEventListener('touchmove', function (e) {
+                if (startY === null) return;
+                const dy = e.touches[0].clientY - startY;
+                if (dy <= 0 || window.scrollY > 0) { if (pull) hidePull(); pull = 0; if (dy <= 0) startY = null; return; }
+                // resistance: the further you pull, the heavier it gets
+                pull = Math.min(MAX, Math.pow(dy, 0.85));
+                if (e.cancelable) e.preventDefault();
+                showPull(pull);
+            }, {passive: false});
+
+            document.addEventListener('touchend', async function () {
+                if (startY === null) return;
+                startY = null;
+                if (pull >= TRIGGER && !busy) {
+                    busy = true;
+                    if (navigator.vibrate) navigator.vibrate(8);
+                    ptr.classList.add('loading');
+                    ptr.firstElementChild.className = 'bi bi-arrow-repeat';
+                    ptr.style.transition = 'transform .2s';
+                    showPull(TRIGGER);
+                    elapsed = 0;
+                    await refreshResults(true);
+                    busy = false;
+                }
+                hidePull();
+                pull = 0;
+            });
         }
 
         applyView();
