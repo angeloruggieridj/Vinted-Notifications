@@ -41,6 +41,7 @@
         {% endif %}
     </div>
 </aside>
+<div class="rail-backdrop" id="railBackdrop"></div>
 
 <div class="shell">
     <header class="topbar">
@@ -126,9 +127,9 @@
         document.getElementById('railToggle').addEventListener('click', function () {
             rail.classList.toggle('open');
         });
-        document.querySelector('.shell').addEventListener('click', function () {
-            rail.classList.remove('open');
-        });
+        const closeRail = function () { rail.classList.remove('open'); };
+        document.getElementById('railBackdrop').addEventListener('click', closeRail);
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeRail(); });
     });
 </script>
 {% block scripts %}{% endblock %}

@@ -21,7 +21,7 @@
         <span><span class="live-dot off"></span>Auto-refresh is off. <a href="/config">Turn it on in Configuration</a></span>
         {% endif %}
     </div>
-    <button type="button" class="btn btn-primary" id="refreshNow"><i class="bi bi-arrow-clockwise me-1"></i> Refresh now</button>
+    <button type="button" class="btn btn-primary" id="refreshNow" aria-label="Refresh now"><i class="bi bi-arrow-clockwise me-1"></i><span class="d-none d-sm-inline">Refresh now</span></button>
 </div>
 
 <form action="/items" method="get" id="filterForm" class="filters" autocomplete="off">
