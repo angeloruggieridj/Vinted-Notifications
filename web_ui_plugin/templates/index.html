@@ -8,26 +8,22 @@
     <h1 class="h2">{{ _("Dashboard") }}</h1>
 </div>
 
-<div class="stat-row">
-    <div class="stat">
-        <div class="stat-label"><i class="bi bi-bag"></i> {{ _("Items collected") }}</div>
-        <div class="stat-value">{{ stats.total_items }}</div>
-        <div class="stat-note">{{ _("Across all queries") }}</div>
-    </div>
-    <div class="stat">
-        <div class="stat-label"><i class="bi bi-search"></i> {{ _("Active queries") }}</div>
-        <div class="stat-value">{{ stats.total_queries }}</div>
-        <div class="stat-note"><a href="/queries">{{ _("Manage queries") }}</a></div>
-    </div>
-    <div class="stat stat-deal">
-        <div class="stat-label"><i class="bi bi-lightning-charge"></i> {{ _("Below average today") }}</div>
-        <div class="stat-value">{{ stats.deals_today }}</div>
-        <div class="stat-note"><a href="/items?deals=1&period=24h">{{ _("See these deals") }}</a></div>
-    </div>
-    <div class="stat">
-        <div class="stat-label"><i class="bi bi-graph-up"></i> {{ _("Items per day") }}</div>
-        <div class="stat-value">{{ stats.items_per_day }}</div>
-        <div class="stat-note">{{ _("Daily average") }}</div>
+<div class="kpis">
+    <a class="kpi" href="/items">
+        <span class="kpi-label"><i class="bi bi-bag"></i> {{ _("Items collected") }}</span>
+        <strong class="kpi-value">{{ stats.total_items }}</strong>
+    </a>
+    <a class="kpi" href="/queries">
+        <span class="kpi-label"><i class="bi bi-search"></i> {{ _("Active queries") }}</span>
+        <strong class="kpi-value">{{ stats.total_queries }}</strong>
+    </a>
+    <a class="kpi kpi-deal" href="/items?deals=1&period=24h" title="{{ _('See these deals') }}">
+        <span class="kpi-label"><i class="bi bi-lightning-charge-fill"></i> {{ _("Below average today") }}</span>
+        <strong class="kpi-value">{{ stats.deals_today }}</strong>
+    </a>
+    <div class="kpi" title="{{ _('Daily average') }}">
+        <span class="kpi-label"><i class="bi bi-graph-up"></i> {{ _("Items per day") }}</span>
+        <strong class="kpi-value">{{ stats.items_per_day }}</strong>
     </div>
 </div>
 

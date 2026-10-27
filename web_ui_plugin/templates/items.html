@@ -24,84 +24,99 @@
     <button type="button" class="btn btn-primary" id="refreshNow" aria-label="{{ _('Refresh now') }}"><i class="bi bi-arrow-clockwise me-1"></i><span class="d-none d-sm-inline">{{ _("Refresh now") }}</span></button>
 </div>
 
-<form action="/items" method="get" id="filterForm" class="filters" autocomplete="off">
+<form action="/items" method="get" id="filterForm" class="filter-bar" autocomplete="off">
     <input type="hidden" name="page" id="pageInput" value="{{ page }}">
-    <div class="filters-main">
-        <div class="search-wrap">
-            <i class="bi bi-search"></i>
-            <input type="search" class="form-control" id="q" name="q" value="{{ f.q }}" placeholder="{{ _('Search titles') }}" aria-label="{{ _('Search titles') }}">
-        </div>
-        <select class="form-select" id="query" name="query" aria-label="{{ _('Query') }}">
-            <option value="">{{ _("All queries") }}</option>
-            {% for query in queries %}
-            <option value="{{ query.query_id }}" {% if selected_query == query.query_id|string %}selected{% endif %}>{{ query.display }}</option>
-            {% endfor %}
-        </select>
-        <select class="form-select" id="sort" name="sort" aria-label="{{ _('Sort by') }}">
-            <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>{{ _("Newest first") }}</option>
-            <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>{{ _("Oldest first") }}</option>
-            <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>{{ _("Price: low to high") }}</option>
-            <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>{{ _("Price: high to low") }}</option>
-            <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>{{ _("Seller stars") }}</option>
-            <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>{{ _("Seller reviews") }}</option>
-        </select>
-        <select class="form-select" id="per_page" name="per_page" aria-label="{{ _('Items per page') }}">
-            {% for n in page_sizes %}
-            <option value="{{ n }}" {% if f.per_page == n %}selected{% endif %}>{{ _("%(n)s per page", n=n) }}</option>
-            {% endfor %}
-        </select>
-        <div class="filters-actions">
-            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-expanded="false" aria-controls="moreFilters">
-                <i class="bi bi-sliders2 me-1"></i> {{ _("More") }}<span class="count-pill" id="activeCount" {% if not active_filters %}hidden{% endif %}>{{ active_filters }}</span>
-            </button>
-            <button type="button" class="btn btn-outline-secondary" id="resetFilters" title="{{ _('Reset all filters') }}"><i class="bi bi-x-lg"></i> {{ _("Reset") }}</button>
-        </div>
+    <div class="searchbar">
+        <i class="bi bi-search"></i>
+        <input type="search" id="q" name="q" value="{{ f.q }}" placeholder="{{ _('Search titles') }}" aria-label="{{ _('Search titles') }}" enterkeyhint="search" autocapitalize="none">
     </div>
-    <div class="collapse {% if f.period or f.seller or f.min_price or f.max_price or f.min_stars or f.min_reviews or f.deals %}show{% endif %}" id="moreFilters">
-        <div class="filters-more">
-            <div class="grid">
-                <div>
-                    <label for="period" class="form-label">{{ _("Found in") }}</label>
-                    <select class="form-select" id="period" name="period">
-                        <option value="">{{ _("Any time") }}</option>
-                        <option value="1h" {% if f.period == '1h' %}selected{% endif %}>{{ _("Last hour") }}</option>
-                        <option value="6h" {% if f.period == '6h' %}selected{% endif %}>{{ _("Last 6 hours") }}</option>
-                        <option value="24h" {% if f.period == '24h' %}selected{% endif %}>{{ _("Last 24 hours") }}</option>
-                        <option value="7d" {% if f.period == '7d' %}selected{% endif %}>{{ _("Last 7 days") }}</option>
-                        <option value="30d" {% if f.period == '30d' %}selected{% endif %}>{{ _("Last 30 days") }}</option>
-                    </select>
+    <div class="pill-row" role="toolbar" aria-label="{{ _('Filters') }}">
+        <button type="button" class="pill" id="filtersButton" data-bs-toggle="modal" data-bs-target="#filtersSheet">
+            <i class="bi bi-sliders2"></i> {{ _("Filters") }}<span class="count-pill" id="activeCount" {% if not active_filters %}hidden{% endif %}>{{ active_filters }}</span>
+        </button>
+        <button type="button" class="pill pill-clear" id="resetFilters" {% if not active_filters %}hidden{% endif %}><i class="bi bi-x-circle-fill"></i> {{ _("Reset") }}</button>
+        <label class="pill-select" data-default="">
+            <i class="bi bi-bookmark"></i>
+            <select id="query" name="query" aria-label="{{ _('Query') }}">
+                <option value="">{{ _("All queries") }}</option>
+                {% for query in queries %}
+                <option value="{{ query.query_id }}" {% if selected_query == query.query_id|string %}selected{% endif %}>{{ query.display }}</option>
+                {% endfor %}
+            </select>
+            <i class="bi bi-chevron-down caret"></i>
+        </label>
+        <label class="pill-select" data-default="newest">
+            <i class="bi bi-arrow-down-up"></i>
+            <select id="sort" name="sort" aria-label="{{ _('Sort by') }}">
+                <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>{{ _("Newest first") }}</option>
+                <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>{{ _("Oldest first") }}</option>
+                <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>{{ _("Price: low to high") }}</option>
+                <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>{{ _("Price: high to low") }}</option>
+                <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>{{ _("Seller stars") }}</option>
+                <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>{{ _("Seller reviews") }}</option>
+            </select>
+            <i class="bi bi-chevron-down caret"></i>
+        </label>
+        <label class="pill-select" data-default="">
+            <i class="bi bi-clock"></i>
+            <select id="period" name="period" aria-label="{{ _('Found in') }}">
+                <option value="">{{ _("Any time") }}</option>
+                <option value="1h" {% if f.period == '1h' %}selected{% endif %}>{{ _("Last hour") }}</option>
+                <option value="6h" {% if f.period == '6h' %}selected{% endif %}>{{ _("Last 6 hours") }}</option>
+                <option value="24h" {% if f.period == '24h' %}selected{% endif %}>{{ _("Last 24 hours") }}</option>
+                <option value="7d" {% if f.period == '7d' %}selected{% endif %}>{{ _("Last 7 days") }}</option>
+                <option value="30d" {% if f.period == '30d' %}selected{% endif %}>{{ _("Last 30 days") }}</option>
+            </select>
+            <i class="bi bi-chevron-down caret"></i>
+        </label>
+    </div>
+</form>
+
+<!-- Filters sheet: the inputs belong to the form above through their form attribute -->
+<div class="modal fade sheet" id="filtersSheet" tabindex="-1" aria-labelledby="filtersSheetLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="sheet-grabber" aria-hidden="true"></div>
+            <div class="sheet-bar">
+                <button type="button" class="sheet-action" id="resetFilters2">{{ _("Reset") }}</button>
+                <h2 class="sheet-title" id="filtersSheetLabel">{{ _("Filters") }}</h2>
+                <button type="button" class="sheet-action sheet-done" data-bs-dismiss="modal">{{ _("Done") }}</button>
+            </div>
+            <div class="sheet-body">
+                <div class="ios-title">{{ _("Seller") }}</div>
+                <div class="ios-group">
+                    <label class="ios-row" for="seller"><span class="ios-label">{{ _("Seller name") }}</span>
+                        <input type="search" class="ios-input" id="seller" name="seller" form="filterForm" value="{{ f.seller }}" autocapitalize="none"></label>
+                    <label class="ios-row" for="min_stars"><span class="ios-label">{{ _("Min seller stars") }}</span>
+                        <input type="number" class="ios-input" id="min_stars" name="min_stars" form="filterForm" min="0" max="5" step="0.1" inputmode="decimal" value="{{ f.min_stars }}" placeholder="0-5"></label>
+                    <label class="ios-row" for="min_reviews"><span class="ios-label">{{ _("Min seller reviews") }}</span>
+                        <input type="number" class="ios-input" id="min_reviews" name="min_reviews" form="filterForm" min="0" step="1" inputmode="numeric" value="{{ f.min_reviews }}"></label>
                 </div>
-                <div>
-                    <label for="seller" class="form-label">{{ _("Seller name") }}</label>
-                    <input type="search" class="form-control" id="seller" name="seller" value="{{ f.seller }}">
-                </div>
-                <div>
-                    <label for="min_price" class="form-label">{{ _("Min price") }}</label>
-                    <input type="number" class="form-control" id="min_price" name="min_price" min="0" step="any" value="{{ f.min_price }}">
-                </div>
-                <div>
-                    <label for="max_price" class="form-label">{{ _("Max price") }}</label>
-                    <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" value="{{ f.max_price }}">
-                </div>
-                <div>
-                    <label for="min_stars" class="form-label">{{ _("Min seller stars") }}</label>
-                    <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" value="{{ f.min_stars }}">
-                </div>
-                <div>
-                    <label for="min_reviews" class="form-label">{{ _("Min seller reviews") }}</label>
-                    <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" value="{{ f.min_reviews }}">
-                </div>
-                <div class="deal-switch">
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="deals" name="deals" value="1" {% if f.deals %}checked{% endif %}>
-                        <label class="form-check-label" for="deals">{{ _("Only %(n)s%%+ below average", n=deal_percent) }}</label>
+
+                <div class="ios-title">{{ _("Price") }}</div>
+                <div class="ios-group">
+                    <label class="ios-row" for="min_price"><span class="ios-label">{{ _("Min price") }}</span>
+                        <input type="number" class="ios-input" id="min_price" name="min_price" form="filterForm" min="0" step="any" inputmode="decimal" value="{{ f.min_price }}"></label>
+                    <label class="ios-row" for="max_price"><span class="ios-label">{{ _("Max price") }}</span>
+                        <input type="number" class="ios-input" id="max_price" name="max_price" form="filterForm" min="0" step="any" inputmode="decimal" value="{{ f.max_price }}"></label>
+                    <div class="ios-row">
+                        <label class="ios-label" for="deals">{{ _("Only %(n)s%%+ below average", n=deal_percent) }}
+                            <span class="ios-sub">{{ _("Compared with the average price of the same query") }}</span></label>
+                        <span class="form-check form-switch"><input class="form-check-input" type="checkbox" id="deals" name="deals" form="filterForm" value="1" {% if f.deals %}checked{% endif %}></span>
                     </div>
-                    <small class="text-muted">{{ _("Compared with the average price of the same query") }}</small>
+                </div>
+
+                <div class="ios-title">{{ _("Display") }}</div>
+                <div class="ios-group">
+                    <label class="ios-row" for="per_page"><span class="ios-label">{{ _("Items per page") }}</span>
+                        <select class="ios-select" id="per_page" name="per_page" form="filterForm">
+                            {% for n in page_sizes %}<option value="{{ n }}" {% if f.per_page == n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+                        </select></label>
                 </div>
             </div>
         </div>
     </div>
-</form>
+</div>
 
 <div id="itemsResults">
     {% include "_items_results.html" %}
@@ -188,6 +203,12 @@
             const pill = document.getElementById('activeCount');
             pill.textContent = n;
             pill.hidden = n === 0;
+            document.getElementById('resetFilters').hidden = n === 0;
+            // Pills that hold a non-default choice are highlighted, like active filters in iOS apps
+            document.querySelectorAll('.pill-select').forEach(function (pillEl) {
+                pillEl.classList.toggle('on', pillEl.querySelector('select').value !== pillEl.dataset.default);
+            });
+            document.getElementById('filtersButton').classList.toggle('on', n > 0 && ['seller', 'min_price', 'max_price', 'min_stars', 'min_reviews'].some(function (k) { return form.elements[k].value.trim() !== ''; }) || form.elements.deals.checked);
         }
 
         // ---- "New items" box ----
@@ -288,10 +309,13 @@
 
         // ---- Dynamic filters ----
         let debounce = null;
-        form.addEventListener('change', function (e) {
+        // Fields in the Filters sheet belong to the form through their form attribute
+        document.addEventListener('change', function (e) {
+            if (e.target.form !== form) return;
             if (e.target.tagName === 'SELECT' || e.target.type === 'checkbox') filtersChanged();
         });
-        form.addEventListener('input', function (e) {
+        document.addEventListener('input', function (e) {
+            if (e.target.form !== form) return;
             if (e.target.tagName === 'INPUT' && e.target.type !== 'hidden') {
                 clearTimeout(debounce);
                 debounce = setTimeout(filtersChanged, 400);
@@ -303,15 +327,16 @@
         });
 
         function resetFilters() {
-            form.querySelectorAll('select').forEach(function (s) {
-                s.value = defaults[s.name] !== undefined ? defaults[s.name] : '';
-            });
-            form.querySelectorAll('input:not([type=hidden])').forEach(function (i) {
-                if (i.type === 'checkbox') i.checked = false; else i.value = '';
+            Array.from(form.elements).forEach(function (el) {
+                if (el.type === 'hidden' || el.tagName === 'BUTTON') return;
+                if (el.tagName === 'SELECT') el.value = defaults[el.name] !== undefined ? defaults[el.name] : '';
+                else if (el.type === 'checkbox') el.checked = false;
+                else el.value = '';
             });
             filtersChanged();
         }
         document.getElementById('resetFilters').addEventListener('click', resetFilters);
+        document.getElementById('resetFilters2').addEventListener('click', resetFilters);
 
         // ---- Delegated clicks inside the results block ----
         results.addEventListener('click', function (e) {
@@ -375,6 +400,7 @@
 
         applyView();
         localizeTimes();
+        updateActiveCount();
         knownIds = idsOnScreen();
     });
 </script>

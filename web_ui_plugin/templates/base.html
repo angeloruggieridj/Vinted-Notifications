@@ -1,9 +1,10 @@
-<!DOCTYPE html>
+{% from "_macros.html" import theme_switch %}<!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="color-scheme" content="light dark">
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
     <title>{% block title %}Vinted Notifications{% endblock %}</title>
 
     <!-- Progressive web app -->
@@ -26,7 +27,7 @@
 {% set path = request.path %}
 <aside class="sidebar glass" id="sidebar">
     <a class="sidebar-brand" href="/">
-        <img src="{{ url_for('static', filename='icons/favicon-32.png') }}" alt="" width="32" height="32">
+        <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="Vinted" width="34" height="34">
         <span>Vinted<br>Notifications</span>
     </a>
     <nav class="sidebar-nav" aria-label="{{ _('Main') }}">
@@ -38,6 +39,7 @@
         {% if is_admin and accounts_enabled %}<a class="side-link {% if path.startswith('/users') %}active{% endif %}" href="/users"><i class="bi bi-people"></i> {{ _("Accounts") }}</a>{% endif %}
         {% if is_admin %}<a class="side-link {% if path == '/logs' %}active{% endif %}" href="/logs"><i class="bi bi-terminal"></i> {{ _("Logs") }}</a>{% endif %}
     </nav>
+    <div class="sidebar-theme">{{ theme_switch() }}</div>
     <div class="sidebar-foot">
         <a class="side-account" href="/config#security" title="{{ _('Account') if accounts_enabled else _('Security') }}">
             <span class="avatar">{{ (current_user.username[:1] if current_user and current_user.username else 'V')|upper }}</span>
@@ -80,6 +82,7 @@
             {% endif %}
             <button type="button" class="foot-install js-install" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
         </nav>
+        <p class="foot-legal">{{ _("Unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB.") }}</p>
     </footer>
 </div>
 

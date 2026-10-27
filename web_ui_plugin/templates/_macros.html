@@ -1,3 +1,11 @@
+{% macro theme_switch(labels=False) %}
+<div class="theme-switch {% if labels %}with-labels{% endif %}" role="group" aria-label="{{ _('Appearance') }}">
+    <button type="button" data-theme-set="system" title="{{ _('System') }}" aria-label="{{ _('System') }}"><i class="bi bi-circle-half"></i>{% if labels %}<span>{{ _("System") }}</span>{% endif %}</button>
+    <button type="button" data-theme-set="light" title="{{ _('Light') }}" aria-label="{{ _('Light') }}"><i class="bi bi-sun"></i>{% if labels %}<span>{{ _("Light") }}</span>{% endif %}</button>
+    <button type="button" data-theme-set="dark" title="{{ _('Dark') }}" aria-label="{{ _('Dark') }}"><i class="bi bi-moon-stars"></i>{% if labels %}<span>{{ _("Dark") }}</span>{% endif %}</button>
+</div>
+{% endmacro %}
+
 {% macro seller_info(item) -%}
 {%- if item.seller_login -%}
 <span class="seller-avatar">{{ item.seller_login[:1] }}</span>

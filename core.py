@@ -1,6 +1,7 @@
 import db
 import re
 import time
+from urllib.parse import urlparse as _urlparse
 import requests
 from pyVintedVN import Vinted, requester
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -13,6 +14,22 @@ logger = get_logger(__name__)
 # is answered purely by "have we recorded its id before?". That makes a wiped or
 # freshly seeded database the only real flood risk, and this caps the blast radius.
 MAX_NOTIFICATIONS_PER_RUN = 10
+
+
+# Any Vinted site (vinted.fr, www.vinted.co.uk, vinted.com, ...). The scraper requests whatever
+# address is stored, so this also keeps accounts from pointing it at other hosts.
+_VINTED_HOST = re.compile(r"^(?:[a-z0-9-]+\.)*vinted\.(?:com|co\.uk|[a-z]{2})$", re.I)
+
+
+def is_vinted_url(url):
+    """Is this an http(s) address on a Vinted site?"""
+    try:
+        parsed = _urlparse((url or "").strip())
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(
+        parsed.hostname and _VINTED_HOST.match(parsed.hostname)
+    )
 
 
 def process_query(
@@ -41,6 +58,10 @@ def process_query(
             - message (str): Status message
             - is_new_query (bool): True if query was added, False if it already existed
     """
+    query = (query or "").strip()
+    if not is_vinted_url(query):
+        return "Not a Vinted search URL.", False
+
     # Check if the URL is a brand URL (format: url/brand/id-name)
     parsed_url = urlparse(query)
     path_parts = parsed_url.path.strip("/").split("/")
@@ -172,6 +193,10 @@ def process_update_query(
             - message (str): Status message
             - success (bool): True if query was updated successfully
     """
+    query = (query or "").strip()
+    if not is_vinted_url(query):
+        return "Not a Vinted search URL.", False
+
     # Parse the URL and extract the query parameters
     parsed_url = urlparse(query)
     query_params = parse_qs(parsed_url.query)

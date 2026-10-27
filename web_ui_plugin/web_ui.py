@@ -465,6 +465,7 @@ def users():
     rows = db.list_users()
     for row in rows:
         row["created"] = format_ts(row["created_at"])
+        row["hue"] = sum(map(ord, row["username"])) * 7 % 360  # stable avatar colour
     return render_template("users.html", users=rows, allow_signup=db.get_parameter("allow_signup") == "True",
                            min_password_length=MIN_PASSWORD_LENGTH)
 

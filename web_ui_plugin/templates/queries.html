@@ -15,7 +15,7 @@
     <form action="/add_query" method="post" class="panel query-form">
         <div class="mb-3">
             <label for="query" class="form-label">{{ _("Vinted search URL") }}</label>
-            {{ _("<input type=\"url\" class=\"form-control\" id=\"query\" name=\"query\" required placeholder=\"https://www.vinted.fr/catalog?search_text=nike+shoes\" pattern=\"^https?:\\/\\/(?:www\\.)?vinted\\.[a-z]{2,}(?:\\.[a-z]{2,})*(\\/.*)?$\">") }}
+            <input type="url" inputmode="url" class="form-control" id="query" name="query" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes">
             <div class="form-text">{{ _("Run the search on Vinted with your filters, then paste the page address here.") }}</div>
         </div>
         <div class="query-fields">
@@ -78,8 +78,7 @@
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="query{{ query.id }}" class="form-label">{{ _("Vinted search URL") }}</label>
-                            <input type="url" class="form-control" id="query{{ query.id }}" name="query" value="{{ query.query }}" required
-                                   pattern="^https?:\/\/(?:www\.)?vinted\.[a-z]{2,}(?:\.[a-z]{2,})*(\/.*)?$">
+                            <input type="url" class="form-control" id="query{{ query.id }}" name="query" value="{{ query.query }}" required>
                         </div>
                         <div class="mb-3">
                             <label for="query_name{{ query.id }}" class="form-label">{{ _("Name") }}</label>
