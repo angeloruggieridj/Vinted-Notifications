@@ -125,15 +125,15 @@ code, pre { color: var(--tint); font-family: var(--mono); }
 .sidebar-brand img { border-radius: 9px; }
 .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
 .side-link {
-    display: flex; align-items: center; gap: .8rem; padding: .62rem .8rem; border-radius: 999px; color: var(--label);
+    display: flex; align-items: center; gap: .8rem; padding: .62rem .8rem; border-radius: 18px; color: var(--label);
     text-decoration: none; font-weight: 500; transition: background .15s;
 }
-.side-link i { font-size: 1.15rem; width: 1.3rem; text-align: center; color: var(--label-2); }
+.side-link i { font-size: 1.15rem; width: 1.3rem; text-align: center; color: var(--tint); }
 .side-link:hover { background: var(--fill); color: var(--label); }
 .side-link.active { background: var(--tint-wash); color: var(--tint); font-weight: 600; }
 .side-link.active i { color: var(--tint); }
 .sidebar-foot { margin-top: auto; display: flex; align-items: center; gap: .25rem; padding: .5rem .35rem .1rem; border-top: 1px solid var(--sep); }
-.side-account { flex: 1; min-width: 0; display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--label); padding: .35rem; border-radius: 999px; }
+.side-account { flex: 1; min-width: 0; display: flex; align-items: center; gap: .65rem; text-decoration: none; color: var(--label); padding: .35rem; border-radius: 18px; }
 .side-account:hover { background: var(--fill); }
 .side-account-text { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .side-account-text strong { font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -144,7 +144,7 @@ code, pre { color: var(--tint); font-family: var(--mono); }
 .icon-btn:hover { background: var(--fill-2); }
 
 .shell { margin-left: calc(var(--sidebar-w) + 24px); min-height: 100vh; display: flex; flex-direction: column; }
-.appbar, .tabbar { display: none; }
+.edge, .tabbar { display: none; }
 .page { flex: 1 0 auto; width: 100%; max-width: 1240px; padding: 2rem 2rem 1.5rem; margin: 0 auto; }
 .page > .d-flex:first-child { margin: 0 0 1.25rem; gap: .6rem; }
 .page h1.h2 { font-size: 2.125rem; font-weight: 700; letter-spacing: -.03em; margin: 0; }
@@ -166,14 +166,7 @@ code, pre { color: var(--tint); font-family: var(--mono); }
 @media (max-width: 991.98px) {
     .sidebar { display: none; }
     .shell { margin-left: 0; }
-    .appbar {
-        display: flex; align-items: center; justify-content: center; position: fixed; z-index: 1030; top: 0; left: 0; right: 0;
-        height: calc(3.5rem + var(--safe-top)); padding-top: var(--safe-top);
-        border-width: 0 0 1px; border-radius: 0; box-shadow: none; opacity: 0; transition: opacity .2s; pointer-events: none;
-    }
-    .appbar.titled { opacity: 1; }
-    .appbar-title { font-weight: 600; font-size: 1.02rem; }
-    .page { padding: calc(3.5rem + var(--safe-top) + .25rem) 1rem 1rem; }
+    .page { padding: calc(var(--safe-top) + 1.1rem) 1rem 1rem; }
     .page h1.h2 { font-size: 2rem; margin-top: .25rem; }
     .page-foot { padding: 1rem 1.25rem calc(6.5rem + var(--safe-bottom)); flex-direction: column; align-items: flex-start; }
     .tabbar {
@@ -594,3 +587,54 @@ code, pre { color: var(--tint); font-family: var(--mono); }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ------------------------------------------------------------ Apple HIG alignment (2026 guidelines) */
+/* Dynamic Type: in WebKit the root size follows the reader's text-size setting; all sizes are rem-based */
+@supports (font: -apple-system-body) {
+    html { font: -apple-system-body; font-family: var(--font); }
+}
+
+/* Scroll edge effects: only where content scrolls beneath floating controls (phones and tablets) */
+@media (max-width: 991.98px) {
+    .edge { display: block; position: fixed; left: 0; right: 0; z-index: 1025; pointer-events: none; }
+    .edge-top {
+        top: 0; height: calc(var(--safe-top) + 1.75rem); opacity: 0; transition: opacity .25s;
+        background: linear-gradient(var(--bg), transparent);
+        -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+        -webkit-mask-image: linear-gradient(#000 45%, transparent); mask-image: linear-gradient(#000 45%, transparent);
+    }
+    .edge-top.on { opacity: 1; }
+    .edge-bottom {
+        bottom: 0; height: calc(6.2rem + var(--safe-bottom));
+        background: linear-gradient(transparent, var(--bg) 85%);
+        -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+        -webkit-mask-image: linear-gradient(transparent, #000 60%); mask-image: linear-gradient(transparent, #000 60%);
+    }
+    /* Tab bar minimises while scrolling down, like the system one */
+    .tabbar { transition: height .25s, max-width .25s, padding .25s; }
+    .tabbar.min { height: 3.2rem; max-width: 17rem; }
+    .tabbar.min .tab span { display: none; }
+    .tabbar.min .tab i { font-size: 1.3rem; }
+    .shortcuts { margin: 0 0 1rem; }
+}
+@media (min-width: 992px) { .shortcuts { display: none; } }
+
+/* 44pt minimum touch targets */
+@media (pointer: coarse) {
+    .btn, .form-control, .form-select, .list-row, .tab { min-height: 2.75rem; }
+    .icon-btn { width: 2.75rem; height: 2.75rem; }
+}
+
+/* Accessibility settings: no translucency, stronger separation */
+@media (prefers-reduced-transparency: reduce) {
+    .glass, .modal-content, .flash-message, .savebar, .new-box, .login-card { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .edge { display: none !important; }
+    .deal-query, .price-tag { background: var(--surface); color: var(--label); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@media (prefers-contrast: more) {
+    :root { --sep: rgba(60, 60, 67, .5); --label-2: rgba(0, 0, 0, .78); }
+    .glass, .card, .panel, .qcard, .deal, .stat { box-shadow: inset 0 0 0 1px var(--sep); }
+}
+
+.list-group-ios > form { border-top: 1px solid var(--sep); }
+.list-group-ios > form .list-row { border-top: 0; }

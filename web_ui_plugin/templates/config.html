@@ -7,6 +7,15 @@
     <h1 class="h2">{{ _("Configuration") }}</h1>
 </div>
 
+<!-- Phones and tablets: the places that don't have a tab -->
+<div class="list-group-ios shortcuts d-lg-none">
+    <a href="/allowlist" class="list-row"><i class="bi bi-globe2"></i><span>{{ _("Allowlist") }}</span><i class="bi bi-chevron-right chev"></i></a>
+    {% if is_admin and accounts_enabled %}<a href="/users" class="list-row"><i class="bi bi-people"></i><span>{{ _("Accounts") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
+    {% if is_admin %}<a href="/logs" class="list-row"><i class="bi bi-terminal"></i><span>{{ _("Logs") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
+    <button type="button" class="list-row js-install" hidden><i class="bi bi-phone"></i><span>{{ _("Install app") }}</span></button>
+    {% if auth_enabled %}<form action="/logout" method="post"><button type="submit" class="list-row text-danger"><i class="bi bi-box-arrow-right"></i><span>{{ _("Log out") }}</span></button></form>{% endif %}
+</div>
+
 <div class="settings">
     <nav class="settings-nav" aria-label="{{ _('Settings sections') }}">
         <a href="#general" data-pane="general"><i class="bi bi-sliders"></i> {{ _("General") }}</a>

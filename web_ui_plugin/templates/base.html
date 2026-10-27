@@ -57,10 +57,6 @@
 </aside>
 
 <div class="shell">
-    <header class="appbar glass" id="appbar">
-        <span class="appbar-title" id="appbarTitle">Vinted Notifications</span>
-    </header>
-
     <main class="page">
         {% block content %}{% endblock %}
     </main>
@@ -87,43 +83,17 @@
     </footer>
 </div>
 
+<!-- Scroll edge effects: keep the status bar and the tab bar legible over scrolling content -->
+<div class="edge edge-top" id="edgeTop" aria-hidden="true"></div>
+<div class="edge edge-bottom" aria-hidden="true"></div>
+
 <!-- Tab bar (phones and tablets) -->
-<nav class="tabbar glass" aria-label="{{ _('Main') }}">
+<nav class="tabbar glass" id="tabbar" aria-label="{{ _('Main') }}">
     <a class="tab {% if path == '/' %}active{% endif %}" href="/"><i class="bi bi-house-door"></i><span>{{ _("Dashboard") }}</span></a>
     <a class="tab {% if path.startswith('/items') %}active{% endif %}" href="/items"><i class="bi bi-bag"></i><span>{{ _("Items") }}</span></a>
     <a class="tab {% if path == '/queries' %}active{% endif %}" href="/queries"><i class="bi bi-search"></i><span>{{ _("Queries") }}</span></a>
-    <a class="tab {% if path == '/config' %}active{% endif %}" href="/config"><i class="bi bi-gear"></i><span>{{ _("Settings") }}</span></a>
-    <button type="button" class="tab {% if path in ('/allowlist', '/logs') or path.startswith('/users') %}active{% endif %}" data-bs-toggle="modal" data-bs-target="#moreSheet"><i class="bi bi-three-dots"></i><span>{{ _("More") }}</span></button>
+    <a class="tab {% if path in ('/config', '/allowlist', '/logs') or path.startswith('/users') %}active{% endif %}" href="/config"><i class="bi bi-gear"></i><span>{{ _("Settings") }}</span></a>
 </nav>
-
-<!-- "More" sheet -->
-<div class="modal fade sheet" id="moreSheet" tabindex="-1" aria-label="{{ _('More') }}" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="sheet-grabber" aria-hidden="true"></div>
-            <div class="sheet-head">
-                <span class="avatar avatar-lg">{{ (current_user.username[:1] if current_user and current_user.username else 'V')|upper }}</span>
-                <div>
-                    <strong>{{ current_user.username if current_user and current_user.username else 'Vinted Notifications' }}</strong>
-                    <small class="d-block text-muted">{% if accounts_enabled %}{{ _("Administrator") if is_admin else _("Member") }}{% elif current_version is defined %}v{{ current_version }}{% endif %}</small>
-                </div>
-                <button type="button" class="icon-btn ms-auto" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"><i class="bi bi-x-lg"></i></button>
-            </div>
-            <div class="list-group-ios">
-                <a href="/allowlist" class="list-row"><i class="bi bi-globe2"></i><span>{{ _("Allowlist") }}</span><i class="bi bi-chevron-right chev"></i></a>
-                {% if is_admin and accounts_enabled %}<a href="/users" class="list-row"><i class="bi bi-people"></i><span>{{ _("Accounts") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
-                {% if is_admin %}<a href="/logs" class="list-row"><i class="bi bi-terminal"></i><span>{{ _("Logs") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
-                <a href="/config#security" class="list-row"><i class="bi bi-person-circle"></i><span>{{ _("Account") if accounts_enabled else _("Security") }}</span><i class="bi bi-chevron-right chev"></i></a>
-                <button type="button" class="list-row js-install" hidden><i class="bi bi-phone"></i><span>{{ _("Install app") }}</span></button>
-            </div>
-            {% if auth_enabled %}
-            <form action="/logout" method="post" class="list-group-ios">
-                <button type="submit" class="list-row text-danger"><i class="bi bi-box-arrow-right"></i><span>{{ _("Log out") }}</span></button>
-            </form>
-            {% endif %}
-        </div>
-    </div>
-</div>
 
 <div class="flash-messages">
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -194,15 +164,17 @@
             });
         }, 5000);
 
-        // iOS-style large title: the bar shows the page title once the big one scrolls away
-        const heading = document.querySelector('.page h1');
-        const appbar = document.getElementById('appbar');
-        if (heading && 'IntersectionObserver' in window) {
-            document.getElementById('appbarTitle').textContent = heading.textContent.trim();
-            new IntersectionObserver(function (entries) {
-                appbar.classList.toggle('titled', !entries[0].isIntersecting);
-            }, {rootMargin: '-60px 0px 0px 0px'}).observe(heading);
-        }
+        // Scroll edge effect at the top and a tab bar that minimises while scrolling down
+        const edgeTop = document.getElementById('edgeTop');
+        const tabbar = document.getElementById('tabbar');
+        let lastY = window.scrollY;
+        window.addEventListener('scroll', function () {
+            const y = window.scrollY;
+            edgeTop.classList.toggle('on', y > 6);
+            if (y > lastY + 6 && y > 120) tabbar.classList.add('min');
+            else if (y < lastY - 6 || y < 60) tabbar.classList.remove('min');
+            lastY = y;
+        }, {passive: true});
     });
 
     // ---- Progressive web app: service worker and "Install app" buttons ----
