@@ -38,6 +38,15 @@ def ensure_schema():
             conn.execute("ALTER TABLE queries ADD COLUMN min_stars REAL")
         if "min_reviews" not in cols:
             conn.execute("ALTER TABLE queries ADD COLUMN min_reviews INTEGER")
+        item_cols = [r[1] for r in conn.execute("PRAGMA table_info(items)")]
+        for col, col_type in (
+            ("seller_id", "INTEGER"),
+            ("seller_login", "TEXT"),
+            ("seller_stars", "REAL"),
+            ("seller_reviews", "INTEGER"),
+        ):
+            if col not in item_cols:
+                conn.execute(f"ALTER TABLE items ADD COLUMN {col} {col_type}")
         conn.commit()
     except Exception:
         print_exc()
@@ -115,15 +124,40 @@ def update_last_timestamp(query_id, timestamp):
             conn.close()
 
 
-def add_item_to_db(id, title, query_id, price, timestamp, photo_url, currency="EUR"):
+def add_item_to_db(
+    id,
+    title,
+    query_id,
+    price,
+    timestamp,
+    photo_url,
+    currency="EUR",
+    seller_id=None,
+    seller_login=None,
+    seller_stars=None,
+    seller_reviews=None,
+):
     conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         # Insert into db the id and the query_id related to the item
         cursor.execute(
-            "INSERT INTO items (item, title, price, currency, timestamp, photo_url, query_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (id, title, price, currency, timestamp, photo_url, query_id),
+            "INSERT INTO items (item, title, price, currency, timestamp, photo_url, query_id, "
+            "seller_id, seller_login, seller_stars, seller_reviews) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                id,
+                title,
+                price,
+                currency,
+                timestamp,
+                photo_url,
+                query_id,
+                seller_id,
+                seller_login,
+                seller_stars,
+                seller_reviews,
+            ),
         )
         # Update the last item for the query
         cursor.execute(
@@ -410,6 +444,84 @@ def get_items(limit=50, query=None):
     except Exception:
         print_exc()
         return []
+    finally:
+        if conn:
+            conn.close()
+
+
+ITEM_SORTS = {
+    "newest": "i.timestamp DESC",
+    "oldest": "i.timestamp ASC",
+    "price_asc": "i.price ASC",
+    "price_desc": "i.price DESC",
+    "stars_desc": "i.seller_stars DESC",
+    "reviews_desc": "i.seller_reviews DESC",
+}
+
+
+def search_items(
+    limit=50,
+    query_id=None,
+    text=None,
+    seller=None,
+    min_price=None,
+    max_price=None,
+    min_stars=None,
+    min_reviews=None,
+    since=None,
+    sort="newest",
+):
+    """
+    Search stored items with optional filters.
+
+    Returns:
+        tuple: (rows, total_matching) where each row is
+        (item, title, price, currency, timestamp, query_url, photo_url, query_name,
+         seller_login, seller_stars, seller_reviews)
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        where, params = [], []
+        if query_id:
+            where.append("i.query_id = ?")
+            params.append(query_id)
+        if text:
+            where.append("i.title LIKE ?")
+            params.append(f"%{text}%")
+        if seller:
+            where.append("i.seller_login LIKE ?")
+            params.append(f"%{seller}%")
+        if min_price is not None:
+            where.append("i.price >= ?")
+            params.append(min_price)
+        if max_price is not None:
+            where.append("i.price <= ?")
+            params.append(max_price)
+        if min_stars is not None:
+            where.append("i.seller_stars >= ?")
+            params.append(min_stars)
+        if min_reviews is not None:
+            where.append("i.seller_reviews >= ?")
+            params.append(min_reviews)
+        if since is not None:
+            where.append("i.timestamp >= ?")
+            params.append(since)
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        order_sql = ITEM_SORTS.get(sort, ITEM_SORTS["newest"])
+        base = "FROM items i JOIN queries q ON i.query_id = q.id" + where_sql
+        total = conn.execute("SELECT COUNT(*) " + base, params).fetchone()[0]
+        rows = conn.execute(
+            "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, "
+            "i.photo_url, q.query_name, i.seller_login, i.seller_stars, i.seller_reviews "
+            + base
+            + f" ORDER BY {order_sql}, i.timestamp DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        return rows, total
+    except Exception:
+        print_exc()
+        return [], 0
     finally:
         if conn:
             conn.close()

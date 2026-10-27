@@ -3,6 +3,7 @@ import db
 import core
 import os
 import re
+import time
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from logger import get_logger
@@ -23,9 +24,20 @@ app = Flask(
 app.secret_key = os.urandom(24)
 
 
+_version_cache = {"at": 0, "value": None}
+
+
+def _cached_check_version(ttl=3600):
+    """check_version() hits GitHub, so don't do it on every page/fragment request."""
+    if _version_cache["value"] is None or time.time() - _version_cache["at"] > ttl:
+        _version_cache["value"] = core.check_version()
+        _version_cache["at"] = time.time()
+    return _version_cache["value"]
+
+
 @app.context_processor
 def inject_version_info():
-    is_up_to_date, current_ver, latest_version, github_url = core.check_version()
+    is_up_to_date, current_ver, latest_version, github_url = _cached_check_version()
     return {
         "github_url": github_url,
         "current_version": current_ver,
@@ -183,6 +195,8 @@ def queries():
                 "query": query[1],
                 "display": query_name if query_name else query[1],
                 "last_found_item": last_found_item,
+                "min_stars": query[4] or "",
+                "min_reviews": query[5] or "",
             }
         )
 
@@ -255,30 +269,65 @@ def update_query(query_id):
     return redirect(url_for("queries"))
 
 
-@app.route("/items")
-def items():
-    query_id = request.args.get("query", "")  # Default to empty string instead of None
-    limit = int(request.args.get("limit", 50))
+def _float_arg(name):
+    try:
+        return float(request.args.get(name, ""))
+    except ValueError:
+        return None
 
-    # Get items
-    query_string = None
-    if query_id:
-        # Get the actual query string for the given ID
-        queries = db.get_queries()
-        for q in queries:
-            if str(q[0]) == query_id:
-                query_string = q[1]
-                break
 
-    items_data = db.get_items(limit=limit, query=query_string)
+def _int_arg(name, default=None):
+    try:
+        return int(request.args.get(name, ""))
+    except ValueError:
+        return default
+
+
+PERIODS = {"1h": 3600, "6h": 6 * 3600, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400}
+
+
+def _items_context():
+    """Read the Items filters from the query string and build the template context."""
+    filters = {
+        "query": request.args.get("query", ""),
+        "limit": min(max(_int_arg("limit", 50), 1), 500),
+        "q": request.args.get("q", "").strip(),
+        "seller": request.args.get("seller", "").strip(),
+        "min_price": request.args.get("min_price", ""),
+        "max_price": request.args.get("max_price", ""),
+        "min_stars": request.args.get("min_stars", ""),
+        "min_reviews": request.args.get("min_reviews", ""),
+        "period": request.args.get("period", ""),
+        "sort": request.args.get("sort", "newest"),
+    }
+    since = (
+        int(time.time()) - PERIODS[filters["period"]]
+        if filters["period"] in PERIODS
+        else None
+    )
+    items_data, total = db.search_items(
+        limit=filters["limit"],
+        query_id=_int_arg("query"),
+        text=filters["q"] or None,
+        seller=filters["seller"] or None,
+        min_price=_float_arg("min_price"),
+        max_price=_float_arg("max_price"),
+        min_stars=_float_arg("min_stars"),
+        min_reviews=_int_arg("min_reviews"),
+        since=since,
+        sort=filters["sort"],
+    )
+
     formatted_items = []
-
     for item in items_data:
         formatted_items.append(
             {
                 "title": item[1],
                 "price": item[2],
                 "currency": item[3],
+                # Epoch is formatted in the browser (viewer's timezone); the string is
+                # only the no-JavaScript fallback.
+                "ts": item[4],
                 "timestamp": datetime.fromtimestamp(item[4]).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 ),
@@ -291,6 +340,9 @@ def items():
                 ),
                 "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
                 "photo_url": item[6],
+                "seller_login": item[8],
+                "seller_stars": item[9],
+                "seller_reviews": item[10],
             }
         )
 
@@ -306,24 +358,35 @@ def items():
         )
         display_name = query_name if query_name else q[0]
         # Store display name for selected query
-        if query_id == str(q[0]):
+        if filters["query"] == str(q[0]):
             selected_query_display = display_name
         formatted_queries.append(
             {"id": i + 1, "query_id": q[0], "query": q[1], "display": display_name}
         )
 
-    return render_template(
-        "items.html",
+    return dict(
         items=formatted_items,
+        total=total,
         queries=formatted_queries,
-        selected_query=query_id,
+        f=filters,
+        selected_query=filters["query"],
         selected_query_display=selected_query_display,
-        limit=limit,
         autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
         autorefresh_interval=max(
             5, int(db.get_parameter("query_refresh_delay") or 60)
         ),
     )
+
+
+@app.route("/items")
+def items():
+    return render_template("items.html", **_items_context())
+
+
+@app.route("/items/fragment")
+def items_fragment():
+    """Results block only, used by the Items page to update without a full reload."""
+    return render_template("_items_results.html", **_items_context())
 
 
 @app.route("/config")

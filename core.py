@@ -1,4 +1,5 @@
 import db
+import time
 import requests
 from pyVintedVN import Vinted, requester
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
@@ -284,6 +285,7 @@ def get_user_country(profile_id):
 
 
 _user_feedback_cache = {}
+FEEDBACK_CACHE_TTL = 3600  # seconds
 
 
 def get_user_feedback(profile_id):
@@ -295,8 +297,11 @@ def get_user_feedback(profile_id):
     Returns:
         tuple: (stars, count), or (None, None) if it can't be determined (e.g. rate limited).
     """
-    if profile_id in _user_feedback_cache:
-        return _user_feedback_cache[profile_id]
+    if not profile_id:
+        return None, None
+    cached = _user_feedback_cache.get(profile_id)
+    if cached and time.time() - cached[0] < FEEDBACK_CACHE_TTL:
+        return cached[1]
     url = f"https://www.vinted.fr/api/v2/users/{profile_id}?localize=false"
     try:
         response = requester.get(url)
@@ -311,7 +316,7 @@ def get_user_feedback(profile_id):
     except Exception as e:
         logger.warning(f"Couldn't get feedback for user {profile_id}: {e}")
         return None, None
-    _user_feedback_cache[profile_id] = result
+    _user_feedback_cache[profile_id] = (time.time(), result)
     return result
 
 
@@ -388,24 +393,26 @@ def clear_item_queue(items_queue, new_items_queue):
             ) not in (db.get_allowlist() + ["XX"]):
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
-            # Skip sellers below the query's minimum rating / review count (e.g. brand new or
-            # fake accounts). If the feedback can't be determined we let the item through,
-            # like the country check.
-            min_stars, min_reviews = db.get_query_seller_filters(query_id)
-            if min_stars or min_reviews:
-                stars, reviews = get_user_feedback(item.raw_data["user"]["id"])
-                if stars is not None and (
-                    stars < (min_stars or 0) or reviews < (min_reviews or 0)
-                ):
-                    logger.debug(
-                        f"Item {item.id} skipped: seller has {stars} stars / {reviews} "
-                        f"reviews (required {min_stars or 0} / {min_reviews or 0})"
-                    )
-                    db.update_last_timestamp(query_id, item.raw_timestamp)
-                    continue
             # Check if the item title contains any banwords
             if banwords_str and contains_banwords(item.title, banwords_str):
                 # If it contains banwords, just update the timestamp and skip
+                db.update_last_timestamp(query_id, item.raw_timestamp)
+                continue
+
+            # Seller feedback is stored with the item (shown in the UI) and, when the query
+            # defines minimum stars/reviews, used to skip brand new or fake accounts.
+            # If the feedback can't be determined the item is let through, like the
+            # country check.
+            seller = item.raw_data.get("user") or {}
+            stars, reviews = get_user_feedback(seller.get("id"))
+            min_stars, min_reviews = db.get_query_seller_filters(query_id)
+            if stars is not None and (
+                stars < (min_stars or 0) or reviews < (min_reviews or 0)
+            ):
+                logger.debug(
+                    f"Item {item.id} skipped: seller has {stars} stars / {reviews} "
+                    f"reviews (required {min_stars or 0} / {min_reviews or 0})"
+                )
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
 
@@ -421,6 +428,10 @@ def clear_item_queue(items_queue, new_items_queue):
                 photo_url=item.photo,
                 query_id=query_id,
                 currency=item.currency,
+                seller_id=seller.get("id"),
+                seller_login=seller.get("login"),
+                seller_stars=stars,
+                seller_reviews=reviews,
             )
 
         if is_first_run:
