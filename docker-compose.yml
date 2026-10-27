@@ -12,9 +12,6 @@ services:
       - VN_data:/app/data
       - VN_logs:/app/logs
     restart: unless-stopped
-    environment:
-      # Timezone used for server-side dates/logs (override with TZ=... in your shell or .env)
-      - TZ=${TZ:-Europe/Rome}
     read_only: true
     tmpfs:
       - /tmp

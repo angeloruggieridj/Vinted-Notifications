@@ -47,6 +47,22 @@
                                         </div>
                                     </div>
                                     <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="timezone" class="form-label">Timezone</label>
+                                                <input type="text" class="form-control" id="timezone" name="timezone"
+                                                       list="timezoneList" value="{{ params.timezone or '' }}"
+                                                       placeholder="Browser default" autocomplete="off">
+                                                <datalist id="timezoneList">
+                                                    {% for tz in timezones %}<option value="{{ tz }}">{% endfor %}
+                                                </datalist>
+                                                <small class="form-text text-muted">Timezone used to display dates, for
+                                                    example Europe/Rome or Europe/London. Leave empty to use your
+                                                    browser's timezone.</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
                                         <div class="col-md-12">
                                             <div class="mb-3">
                                                 <div class="form-check form-switch">

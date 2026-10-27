@@ -8,81 +8,48 @@
 </div>
 
 <!-- Statistics Section -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body text-center">
-                <div class="d-flex align-items-center justify-content-center mb-3">
-                    <i class="bi bi-box-seam text-primary" style="font-size: 2rem;"></i>
-                </div>
-                <h5 class="card-title">Total Items</h5>
-                <h2 class="display-4 fw-bold text-primary">{{ stats.total_items }}</h2>
-                <p class="card-text text-muted">Items grabbed for monitored queries so far</p>
-            </div>
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-label"><i class="bi bi-bag"></i> Total items</div>
+            <div class="stat-value">{{ stats.total_items }}</div>
+            <div class="stat-note">Collected for your queries so far</div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body text-center">
-                <div class="d-flex align-items-center justify-content-center mb-3">
-                    <i class="bi bi-search text-success" style="font-size: 2rem;"></i>
-                </div>
-                <h5 class="card-title">Active Queries</h5>
-                <h2 class="display-4 fw-bold text-success">{{ stats.total_queries }}</h2>
-                <p class="card-text text-muted">Queries being monitored</p>
-            </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-label"><i class="bi bi-search"></i> Active queries</div>
+            <div class="stat-value">{{ stats.total_queries }}</div>
+            <div class="stat-note">Being monitored</div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body text-center">
-                <div class="d-flex align-items-center justify-content-center mb-3">
-                    <i class="bi bi-bar-chart-fill text-warning" style="font-size: 2rem;"></i>
-                </div>
-                <h5 class="card-title">Items per Day</h5>
-                <h2 class="display-4 fw-bold text-warning">{{ stats.items_per_day }}</h2>
-                <p class="card-text text-muted">Average items found daily</p>
-            </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-label"><i class="bi bi-graph-up"></i> Items per day</div>
+            <div class="stat-value">{{ stats.items_per_day }}</div>
+            <div class="stat-note">Daily average</div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card h-100 border-0 shadow-sm">
-            <div class="card-body text-center">
-                <div class="d-flex align-items-center justify-content-center mb-3">
-                    <i class="bi bi-clock-history text-info" style="font-size: 2rem;"></i>
-                </div>
-                <h5 class="card-title">Last Found Item</h5>
-                {% if stats.last_item %}
-                <div class="d-flex align-items-center justify-content-center">
-                    {% if stats.last_item.photo_url %}
-                    <img src="{{ stats.last_item.photo_url }}" alt="{{ stats.last_item.title }}"
-                         class="img-thumbnail me-2" style="width: 50px; height: 50px; object-fit: cover;">
-                    {% else %}
-                    <div class="bg-light d-flex align-items-center justify-content-center me-2"
-                         style="width: 50px; height: 50px;">
-                        <i class="bi bi-image text-muted"></i>
-                    </div>
-                    {% endif %}
-                    <div class="text-start">
-                        <h6 class="mb-0 text-truncate" style="max-width: 150px;">
-                            <a href="{{ stats.last_item.url }}" target="_blank"
-                               class="text-decoration-none">
-                                {{ stats.last_item.title }}
-                            </a>
-                        </h6>
-                        <small class="text-muted">{{ stats.last_item.timestamp }}</small>
-                        <div class="mt-1">
-                            <a href="{{ stats.last_item.url }}" target="_blank"
-                               class="btn btn-sm btn-outline-info">
-                                <i class="bi bi-box-arrow-up-right"></i> View
-                            </a>
-                        </div>
-                    </div>
-                </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat">
+            <div class="stat-label"><i class="bi bi-clock-history"></i> Last found item</div>
+            {% if stats.last_item %}
+            <div class="stat-last">
+                {% if stats.last_item.photo_url %}
+                <img src="{{ stats.last_item.photo_url }}" alt="">
                 {% else %}
-                <p class="text-muted">No items found yet</p>
+                <div class="thumb-ph"><i class="bi bi-image text-muted"></i></div>
                 {% endif %}
+                <div class="min-w-0">
+                    <a href="{{ stats.last_item.url }}" target="_blank" rel="noopener"
+                       class="d-block text-truncate fw-semibold text-decoration-none"
+                       style="max-width: 11rem;">{{ stats.last_item.title }}</a>
+                    <div class="stat-note">{{ stats.last_item.timestamp }}</div>
+                </div>
             </div>
+            {% else %}
+            <div class="stat-note mt-2">No items found yet</div>
+            {% endif %}
         </div>
     </div>
 </div>

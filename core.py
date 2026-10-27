@@ -111,9 +111,9 @@ def get_formatted_query_list():
             else query_params.get("search_text", [None])[0]
         )
 
-        if query_name[0] is None:
-            # Use query text instead of the whole query object
-            queries_keywords.append([query[1]])
+        if query_name is None:
+            # Use the query URL when there is neither a name nor a search text
+            queries_keywords.append(query[1])
         else:
             queries_keywords.append(query_name)
 
@@ -286,6 +286,12 @@ def get_user_country(profile_id):
 
 _user_feedback_cache = {}
 FEEDBACK_CACHE_TTL = 3600  # seconds
+FEEDBACK_RETRY_TTL = 120  # seconds before retrying a seller whose feedback failed to load
+
+
+def _remember_feedback(profile_id, result):
+    _user_feedback_cache[profile_id] = (time.time(), result)
+    return result
 
 
 def get_user_feedback(profile_id):
@@ -300,24 +306,25 @@ def get_user_feedback(profile_id):
     if not profile_id:
         return None, None
     cached = _user_feedback_cache.get(profile_id)
-    if cached and time.time() - cached[0] < FEEDBACK_CACHE_TTL:
-        return cached[1]
+    if cached:
+        ttl = FEEDBACK_CACHE_TTL if cached[1][0] is not None else FEEDBACK_RETRY_TTL
+        if time.time() - cached[0] < ttl:
+            return cached[1]
     url = f"https://www.vinted.fr/api/v2/users/{profile_id}?localize=false"
     try:
         response = requester.get(url)
         if response.status_code != 200:
-            return None, None
+            return _remember_feedback(profile_id, (None, None))
         user = response.json()["user"]
         reputation = user.get("feedback_reputation")
         count = user.get("feedback_count")
         if reputation is None or count is None:
-            return None, None
+            return _remember_feedback(profile_id, (None, None))
         result = (round(float(reputation) * 5, 2), int(count))
     except Exception as e:
         logger.warning(f"Couldn't get feedback for user {profile_id}: {e}")
-        return None, None
-    _user_feedback_cache[profile_id] = (time.time(), result)
-    return result
+        return _remember_feedback(profile_id, (None, None))
+    return _remember_feedback(profile_id, result)
 
 
 def process_items(queue):

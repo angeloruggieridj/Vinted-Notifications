@@ -4,6 +4,7 @@ import core
 import os
 import re
 import time
+import zoneinfo
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from logger import get_logger
@@ -48,7 +49,45 @@ def inject_version_info():
 
 @app.context_processor
 def inject_current_year():
-    return {"current_year": datetime.now().year}
+    return {
+        "current_year": datetime.now().year,
+        "display_tz": db.get_parameter("timezone") or "",
+    }
+
+
+def _display_tz():
+    """The timezone chosen in Config, or None to use the server's local time."""
+    name = db.get_parameter("timezone")
+    if not name:
+        return None
+    try:
+        return zoneinfo.ZoneInfo(name)
+    except Exception:
+        return None
+
+
+def format_ts(epoch):
+    """Format an epoch timestamp in the configured timezone."""
+    return datetime.fromtimestamp(epoch, _display_tz()).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _clean_int(field, default, minimum=1):
+    """Read a positive integer setting from the form, falling back to `default`."""
+    try:
+        value = int(request.form.get(field, ""))
+        if value >= minimum:
+            return str(value)
+    except ValueError:
+        pass
+    flash(f"Invalid value for {field}, using {default}", "warning")
+    return str(default)
+
+
+def _setting_int(name, default):
+    try:
+        return int(db.get_parameter(name) or default)
+    except ValueError:
+        return default
 
 
 @app.route("/")
@@ -71,9 +110,7 @@ def index():
         # Get the last timestamp for this query
         try:
             last_timestamp = db.get_last_timestamp(query[0])
-            last_found_item = datetime.fromtimestamp(last_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            last_found_item = format_ts(last_timestamp)
         except Exception as e:
             logger.debug(f"Error getting last timestamp for query {query[0]}: {e}")
             last_found_item = "Never"
@@ -99,9 +136,7 @@ def index():
                 "title": item[1],
                 "price": item[2],
                 "currency": item[3],
-                "timestamp": datetime.fromtimestamp(item[4]).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
+                "timestamp": format_ts(item[4]),
                 "query": item[5],
                 "photo_url": item[6],
                 "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
@@ -126,9 +161,7 @@ def index():
             "title": last_item[1],
             "price": last_item[2],
             "currency": last_item[3],
-            "timestamp": datetime.fromtimestamp(last_item[4]).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
+            "timestamp": format_ts(last_item[4]),
             "query": last_item[5],
             "photo_url": last_item[6],
             "url": f"{urlparse(last_item[5]).scheme}://{urlparse(last_item[5]).netloc}/items/{last_item[0]}"
@@ -181,9 +214,7 @@ def queries():
         # Get the last timestamp for this query
         try:
             last_timestamp = db.get_last_timestamp(query[0])
-            last_found_item = datetime.fromtimestamp(last_timestamp).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            last_found_item = format_ts(last_timestamp)
         except Exception as e:
             logger.debug(f"Error getting last timestamp for query {query[0]}: {e}")
             last_found_item = "Never"
@@ -284,13 +315,29 @@ def _int_arg(name, default=None):
 
 
 PERIODS = {"1h": 3600, "6h": 6 * 3600, "24h": 86400, "7d": 7 * 86400, "30d": 30 * 86400}
+PAGE_SIZES = (12, 24, 48, 96, 192)
+DEFAULT_PAGE_SIZE = 24
+
+
+def _page_window(page, pages):
+    """Page numbers to show in the pager, with None marking a gap."""
+    wanted = sorted({1, pages, *range(max(1, page - 2), min(pages, page + 2) + 1)})
+    window = []
+    for number in wanted:
+        if window and number - window[-1] > 1:
+            window.append(None)
+        window.append(number)
+    return window
 
 
 def _items_context():
     """Read the Items filters from the query string and build the template context."""
+    per_page = _int_arg("per_page", _int_arg("limit", DEFAULT_PAGE_SIZE))
+    if per_page not in PAGE_SIZES:
+        per_page = DEFAULT_PAGE_SIZE
     filters = {
         "query": request.args.get("query", ""),
-        "limit": min(max(_int_arg("limit", 50), 1), 500),
+        "per_page": per_page,
         "q": request.args.get("q", "").strip(),
         "seller": request.args.get("seller", "").strip(),
         "min_price": request.args.get("min_price", ""),
@@ -305,8 +352,7 @@ def _items_context():
         if filters["period"] in PERIODS
         else None
     )
-    items_data, total = db.search_items(
-        limit=filters["limit"],
+    search = dict(
         query_id=_int_arg("query"),
         text=filters["q"] or None,
         seller=filters["seller"] or None,
@@ -317,27 +363,29 @@ def _items_context():
         since=since,
         sort=filters["sort"],
     )
+    page = max(1, _int_arg("page", 1))
+    items_data, total = db.search_items(
+        limit=per_page, offset=(page - 1) * per_page, **search
+    )
+    pages = max(1, -(-total // per_page))
+    if page > pages:  # e.g. the last page emptied after a clear or a stricter filter
+        page = pages
+        items_data, total = db.search_items(
+            limit=per_page, offset=(page - 1) * per_page, **search
+        )
 
     formatted_items = []
     for item in items_data:
+        search_text = parse_qs(urlparse(item[5]).query).get("search_text", [None])[0]
         formatted_items.append(
             {
                 "title": item[1],
                 "price": item[2],
                 "currency": item[3],
-                # Epoch is formatted in the browser (viewer's timezone); the string is
-                # only the no-JavaScript fallback.
+                # Epoch is formatted in the browser; the string is the no-JavaScript fallback.
                 "ts": item[4],
-                "timestamp": datetime.fromtimestamp(item[4]).strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                # Ugly Ugly Ugly very Ugly eeew but I have to do a proper migration of existing db later else it'll break
-                # Eeew bad me >:c
-                "query": (
-                    item[7] if item[7] else parse_qs(urlparse(item[5]).query).get("search_text", [None])[0]
-                    if parse_qs(urlparse(item[5]).query).get("search_text", [None])[0]
-                    else item[5]
-                ),
+                "timestamp": format_ts(item[4]),
+                "query": item[7] or search_text or item[5],
                 "url": f"{urlparse(item[5]).scheme}://{urlparse(item[5]).netloc}/items/{item[0]}",
                 "photo_url": item[6],
                 "seller_login": item[8],
@@ -346,35 +394,37 @@ def _items_context():
             }
         )
 
-    # Get queries for filter dropdown
-    queries = db.get_queries()
+    # Queries for the filter dropdown
     formatted_queries = []
     selected_query_display = None
-    for i, q in enumerate(queries):
-        parsed_query = urlparse(q[1])
-        query_params = parse_qs(parsed_query.query)
-        query_name = (
-            q[3] if q[3] is not None else query_params.get("search_text", [None])[0]
-        )
-        display_name = query_name if query_name else q[0]
-        # Store display name for selected query
+    for q in db.get_queries():
+        query_params = parse_qs(urlparse(q[1]).query)
+        display_name = q[3] or query_params.get("search_text", [None])[0] or q[1]
         if filters["query"] == str(q[0]):
             selected_query_display = display_name
-        formatted_queries.append(
-            {"id": i + 1, "query_id": q[0], "query": q[1], "display": display_name}
-        )
+        formatted_queries.append({"query_id": q[0], "display": display_name})
 
+    active_filters = sum(
+        1
+        for key in ("query", "q", "seller", "min_price", "max_price", "min_stars", "min_reviews", "period")
+        if filters[key]
+    )
     return dict(
         items=formatted_items,
         total=total,
+        page=page,
+        pages=pages,
+        page_window=_page_window(page, pages),
+        page_sizes=PAGE_SIZES,
+        first_shown=(page - 1) * per_page + 1 if formatted_items else 0,
+        last_shown=(page - 1) * per_page + len(formatted_items),
         queries=formatted_queries,
         f=filters,
+        active_filters=active_filters,
         selected_query=filters["query"],
         selected_query_display=selected_query_display,
         autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
-        autorefresh_interval=max(
-            5, int(db.get_parameter("query_refresh_delay") or 60)
-        ),
+        autorefresh_interval=max(5, _setting_int("query_refresh_delay", 60)),
     )
 
 
@@ -389,10 +439,26 @@ def items_fragment():
     return render_template("_items_results.html", **_items_context())
 
 
+@app.route("/items/clear", methods=["POST"])
+def clear_items():
+    query_id = request.form.get("query_id", type=int)
+    deleted = db.clear_items(query_id)
+    flash(
+        f"Deleted {deleted} item{'s' if deleted != 1 else ''}. "
+        "Existing listings will be recorded silently on the next check.",
+        "success",
+    )
+    return redirect(url_for("items"))
+
+
 @app.route("/config")
 def config():
     params = db.get_all_parameters()
-    return render_template("config.html", params=params)
+    return render_template(
+        "config.html",
+        params=params,
+        timezones=sorted(zoneinfo.available_timezones()),
+    )
 
 
 @app.route("/update_config", methods=["POST"])
@@ -406,14 +472,19 @@ def update_config():
     # Update RSS parameters
     rss_enabled = "rss_enabled" in request.form
     db.set_parameter("rss_enabled", str(rss_enabled))
-    db.set_parameter("rss_port", request.form.get("rss_port", "8080"))
-    db.set_parameter("rss_max_items", request.form.get("rss_max_items", "100"))
+    db.set_parameter("rss_port", _clean_int("rss_port", 8080))
+    db.set_parameter("rss_max_items", _clean_int("rss_max_items", 100))
 
     # Update System parameters
-    db.set_parameter("items_per_query", request.form.get("items_per_query", "20"))
-    db.set_parameter(
-        "query_refresh_delay", request.form.get("query_refresh_delay", "60")
-    )
+    db.set_parameter("items_per_query", _clean_int("items_per_query", 20))
+    db.set_parameter("query_refresh_delay", _clean_int("query_refresh_delay", 60))
+    timezone = request.form.get("timezone", "").strip()
+    try:
+        if timezone:
+            zoneinfo.ZoneInfo(timezone)
+        db.set_parameter("timezone", timezone)
+    except Exception:
+        flash(f'Unknown timezone "{timezone}", keeping the previous one', "warning")
     db.set_parameter("banwords", request.form.get("banwords", ""))
     items_autorefresh = "items_autorefresh" in request.form
     db.set_parameter("items_autorefresh", str(items_autorefresh))

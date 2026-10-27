@@ -416,30 +416,16 @@ def get_all_parameters():
             conn.close()
 
 
-def get_items(limit=50, query=None):
+def get_items(limit=50):
+    """Most recent stored items (used by the dashboard)."""
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        if query:
-            # Get the query_id for the given query
-            cursor.execute("SELECT id FROM queries WHERE query=?", (query,))
-            result = cursor.fetchone()
-            if result:
-                query_id = result[0]
-                # Get items with the matching query_id
-                cursor.execute(
-                    "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, i.photo_url, q.query_name FROM items i JOIN queries q ON i.query_id = q.id WHERE i.query_id=? ORDER BY i.timestamp DESC LIMIT ?",
-                    (query_id, limit),
-                )
-            else:
-                return []
-        else:
-            # Join with queries table to get the query text
-            cursor.execute(
-                "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, i.photo_url, q.query_name FROM items i JOIN queries q ON i.query_id = q.id ORDER BY i.timestamp DESC LIMIT ?",
-                (limit,),
-            )
+        cursor.execute(
+            "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, i.photo_url, q.query_name FROM items i JOIN queries q ON i.query_id = q.id ORDER BY i.timestamp DESC LIMIT ?",
+            (limit,),
+        )
         return cursor.fetchall()
     except Exception:
         print_exc()
@@ -459,6 +445,43 @@ ITEM_SORTS = {
 }
 
 
+def _escape_like(value):
+    """Escape LIKE wildcards so user input is matched literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def clear_items(query_id=None):
+    """
+    Delete stored items, either all of them or only those of one query.
+
+    The affected queries also get their "last item" watermark reset, so the next scrape
+    is treated as a first run (existing listings are recorded silently instead of
+    flooding the notification channels).
+
+    Returns:
+        int: number of deleted items.
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        if query_id:
+            deleted = conn.execute(
+                "DELETE FROM items WHERE query_id=?", (query_id,)
+            ).rowcount
+            conn.execute("UPDATE queries SET last_item=NULL WHERE id=?", (query_id,))
+        else:
+            deleted = conn.execute("DELETE FROM items").rowcount
+            conn.execute("UPDATE queries SET last_item=NULL")
+        conn.commit()
+        return deleted
+    except Exception:
+        print_exc()
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
+
 def search_items(
     limit=50,
     query_id=None,
@@ -470,6 +493,7 @@ def search_items(
     min_reviews=None,
     since=None,
     sort="newest",
+    offset=0,
 ):
     """
     Search stored items with optional filters.
@@ -487,11 +511,11 @@ def search_items(
             where.append("i.query_id = ?")
             params.append(query_id)
         if text:
-            where.append("i.title LIKE ?")
-            params.append(f"%{text}%")
+            where.append("i.title LIKE ? ESCAPE '\\'")
+            params.append(f"%{_escape_like(text)}%")
         if seller:
-            where.append("i.seller_login LIKE ?")
-            params.append(f"%{seller}%")
+            where.append("i.seller_login LIKE ? ESCAPE '\\'")
+            params.append(f"%{_escape_like(seller)}%")
         if min_price is not None:
             where.append("i.price >= ?")
             params.append(min_price)
@@ -515,8 +539,8 @@ def search_items(
             "SELECT i.item, i.title, i.price, i.currency, i.timestamp, q.query, "
             "i.photo_url, q.query_name, i.seller_login, i.seller_stars, i.seller_reviews "
             + base
-            + f" ORDER BY {order_sql}, i.timestamp DESC LIMIT ?",
-            params + [limit],
+            + f" ORDER BY {order_sql}, i.timestamp DESC LIMIT ? OFFSET ?",
+            params + [limit, offset],
         ).fetchall()
         return rows, total
     except Exception:

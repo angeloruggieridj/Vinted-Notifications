@@ -3,160 +3,176 @@
 {% block title %}Items - Vinted Notifications{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+<div class="d-flex justify-content-between flex-wrap align-items-center">
     <h1 class="h2">Items</h1>
 </div>
 
-{% if autorefresh_enabled %}
-<div class="mb-3" id="autoRefreshBox" data-interval="{{ autorefresh_interval }}">
-    <div class="d-flex justify-content-between small text-muted mb-1">
-        <span><i class="bi bi-arrow-repeat me-1"></i> Auto-refresh enabled</span>
-        <span>Next refresh in <span id="autoRefreshCountdown">{{ autorefresh_interval }}</span>s</span>
+<!-- Live bar: auto-refresh progress and manual refresh -->
+<div class="live-bar" id="liveBar" data-enabled="{{ 1 if autorefresh_enabled else 0 }}" data-interval="{{ autorefresh_interval }}">
+    <div class="live-state">
+        {% if autorefresh_enabled %}
+        <div class="live-row">
+            <span><span class="live-dot"></span>Auto-refresh every {{ autorefresh_interval }}s</span>
+            <span>Next refresh in <strong id="autoRefreshCountdown">{{ autorefresh_interval }}</strong>s</span>
+        </div>
+        <div class="progress"><div class="progress-bar" id="autoRefreshBar" role="progressbar" style="width: 0%"
+                                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
+        {% else %}
+        <span><span class="live-dot off"></span>Auto-refresh is off. <a href="/config">Turn it on in Configuration</a></span>
+        {% endif %}
     </div>
-    <div class="progress" style="height: 6px;">
-        <div class="progress-bar bg-info" id="autoRefreshBar" role="progressbar" style="width: 0%"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
-    </div>
+    <button type="button" class="btn btn-primary" id="refreshNow"><i class="bi bi-arrow-clockwise me-1"></i> Refresh now</button>
 </div>
-{% endif %}
 
-<div class="row mb-4">
-    <div class="col-md-12">
-        <div class="card">
-            <div class="card-header d-flex align-items-center">
-                <i class="bi bi-funnel-fill me-2 text-info"></i>
-                <h5 class="card-title mb-0">Filter Items</h5>
+<form action="/items" method="get" id="filterForm" class="filters" autocomplete="off">
+    <input type="hidden" name="page" id="pageInput" value="{{ page }}">
+    <div class="filters-main">
+        <div class="search-wrap">
+            <i class="bi bi-search"></i>
+            <input type="search" class="form-control" id="q" name="q" value="{{ f.q }}" placeholder="Search titles" aria-label="Search titles">
+        </div>
+        <select class="form-select" id="query" name="query" aria-label="Query">
+            <option value="">All queries</option>
+            {% for query in queries %}
+            <option value="{{ query.query_id }}" {% if selected_query == query.query_id|string %}selected{% endif %}>{{ query.display }}</option>
+            {% endfor %}
+        </select>
+        <select class="form-select" id="sort" name="sort" aria-label="Sort by">
+            <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>Newest first</option>
+            <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>Oldest first</option>
+            <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>Price: low to high</option>
+            <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>Price: high to low</option>
+            <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>Seller stars</option>
+            <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>Seller reviews</option>
+        </select>
+        <select class="form-select" id="per_page" name="per_page" aria-label="Items per page">
+            {% for n in page_sizes %}
+            <option value="{{ n }}" {% if f.per_page == n %}selected{% endif %}>{{ n }} per page</option>
+            {% endfor %}
+        </select>
+        <div class="filters-actions">
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#moreFilters" aria-expanded="false" aria-controls="moreFilters">
+                <i class="bi bi-sliders2 me-1"></i> More<span class="count-pill" id="activeCount" {% if not active_filters %}hidden{% endif %}>{{ active_filters }}</span>
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="resetFilters" title="Reset all filters"><i class="bi bi-x-lg"></i> Reset</button>
+        </div>
+    </div>
+    <div class="collapse {% if f.period or f.seller or f.min_price or f.max_price or f.min_stars or f.min_reviews %}show{% endif %}" id="moreFilters">
+        <div class="filters-more">
+            <div class="grid">
+                <div>
+                    <label for="period" class="form-label">Found in</label>
+                    <select class="form-select" id="period" name="period">
+                        <option value="">Any time</option>
+                        <option value="1h" {% if f.period == '1h' %}selected{% endif %}>Last hour</option>
+                        <option value="6h" {% if f.period == '6h' %}selected{% endif %}>Last 6 hours</option>
+                        <option value="24h" {% if f.period == '24h' %}selected{% endif %}>Last 24 hours</option>
+                        <option value="7d" {% if f.period == '7d' %}selected{% endif %}>Last 7 days</option>
+                        <option value="30d" {% if f.period == '30d' %}selected{% endif %}>Last 30 days</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="seller" class="form-label">Seller name</label>
+                    <input type="search" class="form-control" id="seller" name="seller" value="{{ f.seller }}">
+                </div>
+                <div>
+                    <label for="min_price" class="form-label">Min price</label>
+                    <input type="number" class="form-control" id="min_price" name="min_price" min="0" step="any" value="{{ f.min_price }}">
+                </div>
+                <div>
+                    <label for="max_price" class="form-label">Max price</label>
+                    <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" value="{{ f.max_price }}">
+                </div>
+                <div>
+                    <label for="min_stars" class="form-label">Min seller stars</label>
+                    <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" value="{{ f.min_stars }}">
+                </div>
+                <div>
+                    <label for="min_reviews" class="form-label">Min seller reviews</label>
+                    <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" value="{{ f.min_reviews }}">
+                </div>
             </div>
-            <div class="card-body">
-                <form action="/items" method="get" id="filterForm">
-                    <div class="row g-3">
-                        <div class="col-md-3">
-                            <label for="query" class="form-label fw-semibold">Query</label>
-                            <select class="form-select" id="query" name="query">
-                                <option value="">All Queries</option>
-                                {% for query in queries %}
-                                <option value="{{ query.query_id }}" {% if selected_query == query.query_id|string %}selected{% endif %}>
-                                    {{ query.display }}
-                                </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="sort" class="form-label fw-semibold">Sort by</label>
-                            <select class="form-select" id="sort" name="sort">
-                                <option value="newest" {% if f.sort == 'newest' %}selected{% endif %}>Newest first</option>
-                                <option value="oldest" {% if f.sort == 'oldest' %}selected{% endif %}>Oldest first</option>
-                                <option value="price_asc" {% if f.sort == 'price_asc' %}selected{% endif %}>Price: low to high</option>
-                                <option value="price_desc" {% if f.sort == 'price_desc' %}selected{% endif %}>Price: high to low</option>
-                                <option value="stars_desc" {% if f.sort == 'stars_desc' %}selected{% endif %}>Seller stars: high to low</option>
-                                <option value="reviews_desc" {% if f.sort == 'reviews_desc' %}selected{% endif %}>Seller reviews: high to low</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="period" class="form-label fw-semibold">Found in</label>
-                            <select class="form-select" id="period" name="period">
-                                <option value="">Any time</option>
-                                <option value="1h" {% if f.period == '1h' %}selected{% endif %}>Last hour</option>
-                                <option value="6h" {% if f.period == '6h' %}selected{% endif %}>Last 6 hours</option>
-                                <option value="24h" {% if f.period == '24h' %}selected{% endif %}>Last 24 hours</option>
-                                <option value="7d" {% if f.period == '7d' %}selected{% endif %}>Last 7 days</option>
-                                <option value="30d" {% if f.period == '30d' %}selected{% endif %}>Last 30 days</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <label for="limit" class="form-label fw-semibold">Number of Items</label>
-                            <select class="form-select" id="limit" name="limit">
-                                {% for n in (10, 25, 50, 100, 200) %}
-                                <option value="{{ n }}" {% if f.limit == n %}selected{% endif %}>{{ n }} items</option>
-                                {% endfor %}
-                            </select>
-                        </div>
+        </div>
+    </div>
+</form>
 
-                        <div class="col-md-3">
-                            <label for="q" class="form-label fw-semibold">Title contains</label>
-                            <input type="search" class="form-control" id="q" name="q" value="{{ f.q }}"
-                                   placeholder="e.g. mercurial">
-                        </div>
-                        <div class="col-md-3">
-                            <label for="seller" class="form-label fw-semibold">Seller name</label>
-                            <input type="search" class="form-control" id="seller" name="seller" value="{{ f.seller }}"
-                                   placeholder="e.g. tecsimp">
-                        </div>
-                        <div class="col-6 col-md-1">
-                            <label for="min_price" class="form-label fw-semibold">Min price</label>
-                            <input type="number" class="form-control" id="min_price" name="min_price" min="0"
-                                   step="any" value="{{ f.min_price }}">
-                        </div>
-                        <div class="col-6 col-md-1">
-                            <label for="max_price" class="form-label fw-semibold">Max price</label>
-                            <input type="number" class="form-control" id="max_price" name="max_price" min="0"
-                                   step="any" value="{{ f.max_price }}">
-                        </div>
-                        <div class="col-6 col-md-2">
-                            <label for="min_stars" class="form-label fw-semibold">Min seller stars</label>
-                            <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5"
-                                   step="0.1" value="{{ f.min_stars }}">
-                        </div>
-                        <div class="col-6 col-md-2">
-                            <label for="min_reviews" class="form-label fw-semibold">Min seller reviews</label>
-                            <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0"
-                                   step="1" value="{{ f.min_reviews }}">
-                        </div>
-                    </div>
-                    <div class="d-flex justify-content-end gap-2 mt-3">
-                        <button type="button" class="btn btn-outline-secondary" id="resetFilters">
-                            <i class="bi bi-x-circle me-1"></i> Reset filters
-                        </button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-search me-1"></i> Apply Filter
-                        </button>
-                    </div>
+<div id="itemsResults">
+    {% include "_items_results.html" %}
+</div>
+
+<!-- Clear results -->
+<div class="modal fade" id="clearModal" tabindex="-1" aria-labelledby="clearModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="clearModalLabel">Clear collected items</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-2">This permanently deletes the items stored so far. Your queries are not touched.</p>
+                <p class="text-muted small mb-0">The next check records the listings that already exist without sending notifications, so you are not flooded with old items.</p>
+            </div>
+            <div class="modal-footer flex-wrap">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form action="/items/clear" method="post" id="clearQueryForm" hidden>
+                    <input type="hidden" name="query_id" id="clearQueryId">
+                    <button type="submit" class="btn btn-outline-danger">Delete only <span id="clearQueryName"></span></button>
+                </form>
+                <form action="/items/clear" method="post">
+                    <button type="submit" class="btn btn-danger"><i class="bi bi-trash3 me-1"></i> Delete all items</button>
                 </form>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
 
-<div class="row">
-    <div class="col-md-12" id="itemsResults">
-        {% include "_items_results.html" %}
-    </div>
-</div>
-
+{% block scripts %}
 <script>
     document.addEventListener('DOMContentLoaded', function () {
         const form = document.getElementById('filterForm');
         const results = document.getElementById('itemsResults');
-        const defaults = {limit: '50', sort: 'newest'};
+        const pageInput = document.getElementById('pageInput');
+        const liveBar = document.getElementById('liveBar');
+        const refreshBtn = document.getElementById('refreshNow');
+        const TZ = {{ display_tz|tojson }};
+        const defaults = {per_page: '24', sort: 'newest', page: '1'};
 
         // ---- Card / list view (persisted, re-applied after every update) ----
         function applyView() {
-            const view = localStorage.getItem('vintedViewPreference') || 'card';
-            const cardView = document.getElementById('cardView');
-            const listView = document.getElementById('listView');
-            const cardBtn = document.getElementById('cardViewBtn');
-            const listBtn = document.getElementById('listViewBtn');
-            cardView.style.display = view === 'card' ? 'flex' : 'none';
-            listView.style.display = view === 'card' ? 'none' : 'block';
-            cardBtn.classList.toggle('active', view === 'card');
-            listBtn.classList.toggle('active', view !== 'card');
+            const list = (localStorage.getItem('vintedViewPreference') || 'card') === 'list';
+            const cards = document.getElementById('cardView');
+            const table = document.getElementById('listView');
+            if (cards) cards.style.display = list ? 'none' : '';
+            if (table) table.style.display = list ? '' : 'none';
+            document.getElementById('cardViewBtn').classList.toggle('active', !list);
+            document.getElementById('listViewBtn').classList.toggle('active', list);
         }
 
-        results.addEventListener('click', function (e) {
-            if (e.target.closest('#cardViewBtn')) {
-                localStorage.setItem('vintedViewPreference', 'card');
-                applyView();
-            } else if (e.target.closest('#listViewBtn')) {
-                localStorage.setItem('vintedViewPreference', 'list');
-                applyView();
+        // ---- Timestamps in the configured timezone (browser's own when empty) ----
+        function absolute(ts) {
+            const date = new Date(ts * 1000);
+            try {
+                return date.toLocaleString('sv-SE', TZ ? {timeZone: TZ} : undefined);
+            } catch (e) {
+                return date.toLocaleString('sv-SE');
             }
-        });
+        }
 
-        // ---- Timestamps rendered in the viewer's own timezone ----
+        function relative(ts) {
+            const s = Math.max(0, Date.now() / 1000 - ts);
+            if (s < 60) return 'just now';
+            if (s < 3600) return Math.floor(s / 60) + ' min ago';
+            if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+            return Math.floor(s / 86400) + ' d ago';
+        }
+
         function localizeTimes() {
             results.querySelectorAll('time.local-ts').forEach(function (el) {
                 const ts = parseInt(el.dataset.ts, 10);
-                if (ts) el.textContent = new Date(ts * 1000).toLocaleString('sv-SE');
+                if (!ts) return;
+                el.title = absolute(ts);
+                el.textContent = el.dataset.rel ? relative(ts) : absolute(ts);
             });
         }
 
@@ -172,56 +188,112 @@
             return params;
         }
 
+        function updateActiveCount() {
+            const keys = ['query', 'q', 'seller', 'min_price', 'max_price', 'min_stars', 'min_reviews', 'period'];
+            const n = keys.filter(function (k) { return form.elements[k].value.trim() !== ''; }).length;
+            const pill = document.getElementById('activeCount');
+            pill.textContent = n;
+            pill.hidden = n === 0;
+        }
+
         async function refreshResults() {
-            const params = currentParams();
-            const qs = params.toString();
+            const qs = currentParams().toString();
             history.replaceState(null, '', '/items' + (qs ? '?' + qs : ''));
+            updateActiveCount();
             if (controller) controller.abort();
             controller = new AbortController();
+            refreshBtn.querySelector('i').classList.add('spin');
             try {
                 const response = await fetch('/items/fragment' + (qs ? '?' + qs : ''),
                     {signal: controller.signal, headers: {'X-Requested-With': 'fetch'}});
                 if (!response.ok) return;
                 results.innerHTML = await response.text();
+                // The server clamps the page (e.g. after a clear); keep the form in sync
+                const shown = results.querySelector('.pager button.active');
+                pageInput.value = shown ? shown.dataset.page : '1';
                 applyView();
                 localizeTimes();
             } catch (err) {
                 if (err.name !== 'AbortError') console.error('Items refresh failed', err);
+            } finally {
+                refreshBtn.querySelector('i').classList.remove('spin');
             }
+        }
+
+        // A changed filter always goes back to the first page
+        function filtersChanged() {
+            pageInput.value = '1';
+            refreshResults();
         }
 
         // ---- Dynamic filters ----
         let debounce = null;
         form.addEventListener('change', function (e) {
-            if (e.target.tagName === 'SELECT') refreshResults();
+            if (e.target.tagName === 'SELECT') filtersChanged();
         });
         form.addEventListener('input', function (e) {
-            if (e.target.tagName === 'INPUT') {
+            if (e.target.tagName === 'INPUT' && e.target.type !== 'hidden') {
                 clearTimeout(debounce);
-                debounce = setTimeout(refreshResults, 400);
+                debounce = setTimeout(filtersChanged, 400);
             }
         });
         form.addEventListener('submit', function (e) {
             e.preventDefault();
-            refreshResults();
+            filtersChanged();
         });
-        document.getElementById('resetFilters').addEventListener('click', function () {
+
+        function resetFilters() {
             form.querySelectorAll('select').forEach(function (s) {
                 s.value = defaults[s.name] !== undefined ? defaults[s.name] : '';
             });
-            form.querySelectorAll('input').forEach(function (i) { i.value = ''; });
-            refreshResults();
+            form.querySelectorAll('input:not([type=hidden])').forEach(function (i) { i.value = ''; });
+            filtersChanged();
+        }
+        document.getElementById('resetFilters').addEventListener('click', resetFilters);
+
+        // ---- Delegated clicks inside the results block ----
+        results.addEventListener('click', function (e) {
+            if (e.target.closest('#cardViewBtn')) {
+                localStorage.setItem('vintedViewPreference', 'card');
+                applyView();
+            } else if (e.target.closest('#listViewBtn')) {
+                localStorage.setItem('vintedViewPreference', 'list');
+                applyView();
+            } else if (e.target.closest('[data-reset]')) {
+                e.preventDefault();
+                resetFilters();
+            } else {
+                const pageBtn = e.target.closest('[data-page]');
+                if (pageBtn && !pageBtn.disabled) {
+                    pageInput.value = pageBtn.dataset.page;
+                    refreshResults();
+                    form.scrollIntoView({behavior: 'smooth', block: 'start'});
+                }
+            }
         });
 
-        // ---- Auto-refresh with progress bar (enabled from Config) ----
-        // Only the timer calls refreshResults() on schedule; changing a filter updates
-        // the list but leaves the countdown running.
-        const arBox = document.getElementById('autoRefreshBox');
-        if (arBox) {
-            const intervalMs = parseInt(arBox.dataset.interval, 10) * 1000;
+        // ---- Clear results modal: offer a per-query delete when a query is selected ----
+        document.getElementById('clearModal').addEventListener('show.bs.modal', function () {
+            const select = document.getElementById('query');
+            const scoped = select.value !== '';
+            document.getElementById('clearQueryForm').hidden = !scoped;
+            document.getElementById('clearQueryId').value = select.value;
+            document.getElementById('clearQueryName').textContent =
+                scoped ? '“' + select.options[select.selectedIndex].text.trim() + '”' : '';
+        });
+
+        // ---- Auto-refresh with progress bar + manual refresh ----
+        // Only the timer (or "Refresh now") reloads on schedule; changing a filter updates the
+        // list but leaves the countdown running.
+        let elapsed = 0;
+        refreshBtn.addEventListener('click', function () {
+            elapsed = 0;
+            refreshResults();
+        });
+        if (liveBar.dataset.enabled === '1') {
+            const intervalMs = parseInt(liveBar.dataset.interval, 10) * 1000;
             const bar = document.getElementById('autoRefreshBar');
             const countdown = document.getElementById('autoRefreshCountdown');
-            let elapsed = 0;
             let last = Date.now();
             setInterval(function () {
                 const now = Date.now();
@@ -241,6 +313,8 @@
 
         applyView();
         localizeTimes();
+        // Relative times drift: refresh the labels every 30 s
+        setInterval(localizeTimes, 30000);
     });
 </script>
 {% endblock %}
