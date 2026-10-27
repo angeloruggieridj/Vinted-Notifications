@@ -7,6 +7,19 @@
     <h1 class="h2">Items</h1>
 </div>
 
+{% if autorefresh_enabled %}
+<div class="mb-3" id="autoRefreshBox" data-interval="{{ autorefresh_interval }}">
+    <div class="d-flex justify-content-between small text-muted mb-1">
+        <span><i class="bi bi-arrow-repeat me-1"></i> Auto-refresh enabled</span>
+        <span>Next refresh in <span id="autoRefreshCountdown">{{ autorefresh_interval }}</span>s</span>
+    </div>
+    <div class="progress" style="height: 6px;">
+        <div class="progress-bar bg-info" id="autoRefreshBar" role="progressbar" style="width: 0%"
+             aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div>
+    </div>
+</div>
+{% endif %}
+
 <div class="row mb-4">
     <div class="col-md-12">
         <div class="card">
@@ -208,6 +221,31 @@
         listViewBtn.addEventListener('click', function () {
             setActiveView('list');
         });
+
+        // Auto-refresh with progress bar (enabled from Config)
+        const arBox = document.getElementById('autoRefreshBox');
+        if (arBox) {
+            const intervalMs = parseInt(arBox.dataset.interval, 10) * 1000;
+            const bar = document.getElementById('autoRefreshBar');
+            const countdown = document.getElementById('autoRefreshCountdown');
+            let start = Date.now();
+            setInterval(function () {
+                // Don't burn requests while the tab is in background
+                if (document.hidden) {
+                    start = Date.now() - (parseFloat(bar.dataset.elapsed) || 0);
+                    return;
+                }
+                const elapsed = Date.now() - start;
+                bar.dataset.elapsed = elapsed;
+                const pct = Math.min(100, (elapsed / intervalMs) * 100);
+                bar.style.width = pct + '%';
+                bar.setAttribute('aria-valuenow', Math.round(pct));
+                countdown.textContent = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
+                if (elapsed >= intervalMs) {
+                    window.location.reload();
+                }
+            }, 250);
+        }
     });
 </script>
 {% endblock %}

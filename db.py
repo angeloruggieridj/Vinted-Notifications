@@ -28,6 +28,43 @@ def create_or_update_sqlite_db(db_path):
             conn.close()
 
 
+def ensure_schema():
+    """Idempotent schema upgrades that don't warrant a version migration."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(queries)")]
+        if "min_stars" not in cols:
+            conn.execute("ALTER TABLE queries ADD COLUMN min_stars REAL")
+        if "min_reviews" not in cols:
+            conn.execute("ALTER TABLE queries ADD COLUMN min_reviews INTEGER")
+        conn.commit()
+    except Exception:
+        print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_query_seller_filters(query_id):
+    """(min_stars, min_reviews) required for a query; each is None if not set."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT min_stars, min_reviews FROM queries WHERE id=?", (query_id,)
+        ).fetchone()
+        if not row:
+            return None, None
+        return row[0] or None, row[1] or None
+    except Exception:
+        print_exc()
+        return None, None
+    finally:
+        if conn:
+            conn.close()
+
+
 def is_item_in_db_by_id(id):
     conn = None
     try:
@@ -105,7 +142,7 @@ def get_queries():
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("SELECT id, query, last_item, query_name FROM queries")
+        cursor.execute("SELECT id, query, last_item, query_name, min_stars, min_reviews FROM queries")
         return cursor.fetchall()
     except Exception:
         print_exc()
@@ -135,20 +172,15 @@ def is_query_in_db(processed_query):
             conn.close()
 
 
-def add_query_to_db(query, name=None):
+def add_query_to_db(query, name=None, min_stars=None, min_reviews=None):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        if name:
-            cursor.execute(
-                "INSERT INTO queries (query, last_item, query_name) VALUES (?, NULL, ?)",
-                (query, name),
-            )
-        else:
-            cursor.execute(
-                "INSERT INTO queries (query, last_item) VALUES (?, NULL)", (query,)
-            )
+        cursor.execute(
+            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews) VALUES (?, NULL, ?, ?, ?)",
+            (query, name or None, min_stars, min_reviews),
+        )
         conn.commit()
     except Exception:
         print_exc()
@@ -210,7 +242,7 @@ def remove_all_queries_from_db():
             conn.close()
 
 
-def update_query_in_db(query_id, query, name):
+def update_query_in_db(query_id, query, name, min_stars=None, min_reviews=None):
     """
     Update an existing query in the database.
 
@@ -218,6 +250,8 @@ def update_query_in_db(query_id, query, name):
         query_id (int): The ID of the query to update
         query (str): The new query URL
         name (str, optional): The new name for the query
+        min_stars (float, optional): Minimum seller stars (0-5)
+        min_reviews (int, optional): Minimum number of seller reviews
 
     Returns:
         bool: True if the query was updated successfully, False otherwise
@@ -227,8 +261,8 @@ def update_query_in_db(query_id, query, name):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE queries SET query=?, query_name=? WHERE id=?",
-            (query, name, query_id),
+            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=? WHERE id=?",
+            (query, name, min_stars, min_reviews, query_id),
         )
         conn.commit()
         return True
@@ -320,6 +354,11 @@ def set_parameter(key, value):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("UPDATE parameters SET value=? WHERE key=?", (value, key))
+        if cursor.rowcount == 0:
+            # Parameter not present yet (e.g. added after the DB was created)
+            cursor.execute(
+                "INSERT INTO parameters (key, value) VALUES (?, ?)", (key, value)
+            )
         conn.commit()
     except Exception:
         print_exc()

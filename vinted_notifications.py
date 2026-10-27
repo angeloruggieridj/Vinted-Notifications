@@ -17,6 +17,8 @@ if not os.path.exists("./data/vinted_notifications.db"):
     db.create_or_update_sqlite_db("initial_db.sql")
     logger.info("Database created successfully")
 
+db.ensure_schema()
+
 import core
 from rss_feed_plugin.rss_feed import rss_feed_process
 from web_ui_plugin.web_ui import web_ui_process

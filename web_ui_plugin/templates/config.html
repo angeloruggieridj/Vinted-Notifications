@@ -49,6 +49,23 @@
                                     <div class="row">
                                         <div class="col-md-12">
                                             <div class="mb-3">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox"
+                                                           id="items_autorefresh" name="items_autorefresh"
+                                                           {% if params.items_autorefresh == 'True' %}checked{% endif %}>
+                                                    <label class="form-check-label" for="items_autorefresh">
+                                                        Auto-refresh Items page
+                                                    </label>
+                                                    <small class="form-text text-muted d-block">Automatically reload the
+                                                        Items page every "Query Refresh Delay" seconds, showing a
+                                                        progress bar</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-12">
+                                            <div class="mb-3">
                                                 <label for="banwords-input" class="form-label">Banwords</label>
                                                 <div class="input-group mb-2">
                                                     <input type="text" class="form-control" id="banwords-input"

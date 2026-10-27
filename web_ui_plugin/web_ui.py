@@ -73,6 +73,8 @@ def index():
                 "query": query[1],
                 "display": query_name if query_name else query[1],
                 "last_found_item": last_found_item,
+                "min_stars": query[4] or "",
+                "min_reviews": query[5] or "",
             }
         )
 
@@ -133,6 +135,23 @@ def index():
     )
 
 
+def parse_min_reviews(value):
+    """Parse the optional minimum-reviews form value; None if empty/invalid/<=0."""
+    try:
+        return max(0, int(value)) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_min_stars(value):
+    """Parse the optional minimum-stars form value; clamp to 0-5, None if empty/invalid."""
+    try:
+        stars = float(value)
+    except (TypeError, ValueError):
+        return None
+    return min(5.0, max(0.0, stars)) or None
+
+
 @app.route("/queries")
 def queries():
     # Get queries
@@ -176,7 +195,10 @@ def add_query():
     query_name = request.form.get("query_name", "").strip()
     if query:
         message, is_new_query = core.process_query(
-            query, name=query_name if query_name != "" else None
+            query,
+            name=query_name if query_name != "" else None,
+            min_stars=parse_min_stars(request.form.get("min_stars")),
+            min_reviews=parse_min_reviews(request.form.get("min_reviews")),
         )
         if is_new_query:
             flash(f"Query added: {query}", "success")
@@ -217,7 +239,11 @@ def update_query(query_id):
 
     if query:
         message, success = core.process_update_query(
-            query_id, query, name=query_name if query_name != "" else None
+            query_id,
+            query,
+            name=query_name if query_name != "" else None,
+            min_stars=parse_min_stars(request.form.get("min_stars")),
+            min_reviews=parse_min_reviews(request.form.get("min_reviews")),
         )
         if success:
             flash("Query updated", "success")
@@ -293,6 +319,10 @@ def items():
         selected_query=query_id,
         selected_query_display=selected_query_display,
         limit=limit,
+        autorefresh_enabled=db.get_parameter("items_autorefresh") == "True",
+        autorefresh_interval=max(
+            5, int(db.get_parameter("query_refresh_delay") or 60)
+        ),
     )
 
 
@@ -322,6 +352,8 @@ def update_config():
         "query_refresh_delay", request.form.get("query_refresh_delay", "60")
     )
     db.set_parameter("banwords", request.form.get("banwords", ""))
+    items_autorefresh = "items_autorefresh" in request.form
+    db.set_parameter("items_autorefresh", str(items_autorefresh))
 
     # Update Proxy parameters
     check_proxies = "check_proxies" in request.form

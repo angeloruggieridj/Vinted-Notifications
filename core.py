@@ -13,7 +13,7 @@ logger = get_logger(__name__)
 MAX_NOTIFICATIONS_PER_RUN = 10
 
 
-def process_query(query, name=None):
+def process_query(query, name=None, min_stars=None, min_reviews=None):
     """
     Process a Vinted query URL by:
     1. Checking if the URL is a brand URL and converting it to standard format if needed
@@ -27,6 +27,8 @@ def process_query(query, name=None):
     Args:
         query (str): The Vinted query URL
         name (str, optional): A name for the query. If provided, it will be used as the query name.
+        min_stars (float, optional): Minimum seller rating (0-5 stars) required for items to be returned.
+        min_reviews (int, optional): Minimum number of seller reviews required for items to be returned.
 
     Returns:
         tuple: (message, is_new_query)
@@ -84,7 +86,7 @@ def process_query(query, name=None):
         return "Query already exists.", False
     else:
         # add the query to the db
-        db.add_query_to_db(processed_query, name)
+        db.add_query_to_db(processed_query, name, min_stars, min_reviews)
         return "Query added.", True
 
 
@@ -145,7 +147,7 @@ def process_remove_query(number):
         return "Invalid number.", False
 
 
-def process_update_query(query_id, query, name):
+def process_update_query(query_id, query, name, min_stars=None, min_reviews=None):
     """
     Process the update of a query in the database.
 
@@ -185,7 +187,9 @@ def process_update_query(query_id, query, name):
     )
 
     # Update the query in the database
-    if db.update_query_in_db(query_id, processed_query, name):
+    if db.update_query_in_db(
+        query_id, processed_query, name, min_stars, min_reviews
+    ):
         return "Query updated.", True
     else:
         return "Failed to update query.", False
@@ -279,6 +283,38 @@ def get_user_country(profile_id):
     return user_country
 
 
+_user_feedback_cache = {}
+
+
+def get_user_feedback(profile_id):
+    """
+    Get the seller's feedback as (stars, review_count).
+
+    Stars (0-5) are derived from Vinted's feedback_reputation (0-1).
+
+    Returns:
+        tuple: (stars, count), or (None, None) if it can't be determined (e.g. rate limited).
+    """
+    if profile_id in _user_feedback_cache:
+        return _user_feedback_cache[profile_id]
+    url = f"https://www.vinted.fr/api/v2/users/{profile_id}?localize=false"
+    try:
+        response = requester.get(url)
+        if response.status_code != 200:
+            return None, None
+        user = response.json()["user"]
+        reputation = user.get("feedback_reputation")
+        count = user.get("feedback_count")
+        if reputation is None or count is None:
+            return None, None
+        result = (round(float(reputation) * 5, 2), int(count))
+    except Exception as e:
+        logger.warning(f"Couldn't get feedback for user {profile_id}: {e}")
+        return None, None
+    _user_feedback_cache[profile_id] = result
+    return result
+
+
 def process_items(queue):
     """
     Process all queries from the database, search for items, and put them in the queue.
@@ -352,6 +388,21 @@ def clear_item_queue(items_queue, new_items_queue):
             ) not in (db.get_allowlist() + ["XX"]):
                 db.update_last_timestamp(query_id, item.raw_timestamp)
                 continue
+            # Skip sellers below the query's minimum rating / review count (e.g. brand new or
+            # fake accounts). If the feedback can't be determined we let the item through,
+            # like the country check.
+            min_stars, min_reviews = db.get_query_seller_filters(query_id)
+            if min_stars or min_reviews:
+                stars, reviews = get_user_feedback(item.raw_data["user"]["id"])
+                if stars is not None and (
+                    stars < (min_stars or 0) or reviews < (min_reviews or 0)
+                ):
+                    logger.debug(
+                        f"Item {item.id} skipped: seller has {stars} stars / {reviews} "
+                        f"reviews (required {min_stars or 0} / {min_reviews or 0})"
+                    )
+                    db.update_last_timestamp(query_id, item.raw_timestamp)
+                    continue
             # Check if the item title contains any banwords
             if banwords_str and contains_banwords(item.title, banwords_str):
                 # If it contains banwords, just update the timestamp and skip

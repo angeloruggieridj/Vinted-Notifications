@@ -19,7 +19,7 @@
                     <div class="row g-3">
 
                         <!-- Vinted URL (required) -->
-                        <div class="col-md-7">
+                        <div class="col-md-4">
                             <label for="query" class="form-label">Vinted search URL <span
                                     class="text-danger">*</span></label>
                             <input type="url"
@@ -43,6 +43,22 @@
                                    id="query_name"
                                    name="query_name"
                                    placeholder="My search">
+                        </div>
+
+                        <!-- Minimum seller stars (optional) -->
+                        <div class="col-md-2">
+                            <label for="min_stars" class="form-label">Min. seller stars&nbsp;<span
+                                    class="text-muted">(optional)</span></label>
+                            <input type="number" class="form-control" id="min_stars" name="min_stars"
+                                   min="0" max="5" step="0.1" placeholder="e.g. 4.5">
+                            <div class="form-text">0-5, skips new/unrated sellers</div>
+                        </div>
+
+                        <!-- Minimum seller reviews (optional) -->
+                        <div class="col-md-1">
+                            <label for="min_reviews" class="form-label">Min. reviews</label>
+                            <input type="number" class="form-control" id="min_reviews" name="min_reviews"
+                                   min="0" step="1" placeholder="e.g. 5">
                         </div>
 
                         <div class="col-md-2 d-flex align-items-center">
@@ -69,6 +85,8 @@
                         <tr>
                             <th>#</th>
                             <th>Query</th>
+                            <th>Min. Stars</th>
+                            <th>Min. Reviews</th>
                             <th>Last Found Item</th>
                             <th>Actions</th>
                         </tr>
@@ -78,6 +96,8 @@
                         <tr>
                             <td>{{ query.id }}</td>
                             <td>{{ query.display }}</td>
+                            <td>{% if query.min_stars %}<i class="bi bi-star-fill text-warning"></i> {{ query.min_stars }}{% else %}-{% endif %}</td>
+                            <td>{{ query.min_reviews if query.min_reviews else '-' }}</td>
                             <td>{{ query.last_found_item }}</td>
                             <td>
                                 <div class="btn-group" role="group">
@@ -131,6 +151,26 @@
                                                                value="{{ query.display if query.display != query.query else '' }}"
                                                                required
                                                                placeholder="My search">
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="min_stars{{ query.id }}" class="form-label">Min.
+                                                            seller stars <span class="text-muted">(optional)</span></label>
+                                                        <input type="number" class="form-control"
+                                                               id="min_stars{{ query.id }}" name="min_stars"
+                                                               min="0" max="5" step="0.1"
+                                                               value="{{ query.min_stars }}" placeholder="e.g. 4.5">
+                                                        <div class="form-text">0-5. Items from sellers with a lower
+                                                            rating (or no feedback yet) are skipped.</div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label for="min_reviews{{ query.id }}" class="form-label">Min.
+                                                            seller reviews <span class="text-muted">(optional)</span></label>
+                                                        <input type="number" class="form-control"
+                                                               id="min_reviews{{ query.id }}" name="min_reviews"
+                                                               min="0" step="1"
+                                                               value="{{ query.min_reviews }}" placeholder="e.g. 5">
+                                                        <div class="form-text">Items from sellers with fewer reviews
+                                                            are skipped.</div>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer">
