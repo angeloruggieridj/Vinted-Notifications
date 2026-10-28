@@ -37,7 +37,7 @@
             <span class="avatar avatar-md" style="--hue: {{ user.hue }}">{{ user.username[:1]|upper }}</span>
             <span class="contact-main">
                 <strong>{{ user.username }}{% if user.id == current_user.id %} <span class="chip">{{ _("You") }}</span>{% endif %}</strong>
-                <small>{{ _n("%(n)s query", "%(n)s queries", user.query_count) }} &middot; {{ _n("%(n)s item", "%(n)s items", user.item_count) }}</small>
+                <small data-user-summary="{{ user.id }}">{{ _n("%(n)s query", "%(n)s queries", user.query_count) }} &middot; {{ _n("%(n)s item", "%(n)s items", user.item_count) }}</small>
             </span>
             <i class="bi bi-chevron-right chev"></i>
         </button>
@@ -66,13 +66,14 @@
                     <label class="ios-row" for="new_username"><span class="ios-label">{{ _("Username") }}</span>
                         <input type="text" class="ios-input" id="new_username" name="username" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="off" autocapitalize="none" spellcheck="false" required></label>
                     <label class="ios-row" for="new_user_password"><span class="ios-label">{{ _("Password") }}</span>
-                        <input type="password" class="ios-input" id="new_user_password" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
+                        <input type="password" class="ios-input" id="new_user_password" name="password" minlength="{{ min_password_length }}" data-pw-meter="{{ min_password_length }}" autocomplete="new-password" required></label>
                     <label class="ios-row" for="new_role"><span class="ios-label">{{ _("Role") }}</span>
                         <select class="ios-select" id="new_role" name="role">
                             <option value="user">{{ _("Member") }}</option>
                             <option value="admin">{{ _("Administrator") }}</option>
                         </select></label>
                 </div>
+                <p class="ios-foot">{{ _("Passwords need at least %(n)s characters; a phrase of a few words works well. Common and breached passwords are refused.", n=min_password_length) }}</p>
                 <p class="ios-foot">{{ _("Members have their own queries, items, notifications and settings. Administrators also manage the server and the accounts.") }}</p>
             </div>
         </form>
@@ -98,7 +99,7 @@
                         <span class="chip {% if user.role == 'admin' %}chip-ok{% endif %}">{{ _("Administrator") if user.role == 'admin' else _("Member") }}</span>
                         {% if user.disabled %}<span class="chip chip-warn">{{ _("Disabled") }}</span>{% endif %}
                     </span>
-                    <small class="text-muted">{{ _("Created") }} {{ user.created[:10] }} &middot; {{ _n("%(n)s query", "%(n)s queries", user.query_count) }} &middot; {{ _n("%(n)s item", "%(n)s items", user.item_count) }}</small>
+                    <small class="text-muted">{{ _("Created") }} {{ user.created[:10] }} &middot; <span data-user-summary="{{ user.id }}">{{ _n("%(n)s query", "%(n)s queries", user.query_count) }} &middot; {{ _n("%(n)s item", "%(n)s items", user.item_count) }}</span></small>
                 </div>
 
                 <div class="ios-title">{{ _("Role") }}</div>
@@ -115,7 +116,7 @@
                 <form action="/users/{{ user.id }}/update" method="post" class="ios-group">
                     <input type="hidden" name="action" value="password">
                     <label class="ios-row" for="pw{{ user.id }}"><span class="ios-label">{{ _("New password") }}</span>
-                        <input type="password" class="ios-input" id="pw{{ user.id }}" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
+                        <input type="password" class="ios-input" id="pw{{ user.id }}" name="password" minlength="{{ min_password_length }}" data-pw-meter="{{ min_password_length }}" autocomplete="new-password" required></label>
                     <button type="submit" class="ios-row ios-button">{{ _("Reset password") }}</button>
                 </form>
 
@@ -157,6 +158,23 @@
             });
             document.getElementById('usersEmpty').hidden = shown > 0;
         }
+
+        // Counts follow the scrapers: refresh them while the page is open
+        function refreshCounts() {
+            if (document.hidden) return;
+            fetch('/api/users/stats', {headers: {'X-Requested-With': 'fetch'}, cache: 'no-store'})
+                .then(function (r) { return r.ok ? r.json() : null; })
+                .then(function (stats) {
+                    if (!stats) return;
+                    document.querySelectorAll('[data-user-summary]').forEach(function (el) {
+                        const text = stats[el.dataset.userSummary];
+                        if (text && el.textContent !== text) el.textContent = text;
+                    });
+                })
+                .catch(function () {});
+        }
+        setInterval(refreshCounts, 10000);
+        document.addEventListener('visibilitychange', refreshCounts);
 
         search.addEventListener('input', apply);
         filterBar.addEventListener('click', function (e) {

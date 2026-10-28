@@ -1,8 +1,10 @@
 import db
+import push
 import re
 import time
 from urllib.parse import urlparse as _urlparse
 import requests
+from concurrent.futures import ThreadPoolExecutor
 from pyVintedVN import Vinted, requester
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from logger import get_logger
@@ -33,7 +35,7 @@ def is_vinted_url(url):
 
 
 def process_query(
-    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0
+    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0, push=False
 ):
     """
     Process a Vinted query URL by:
@@ -52,6 +54,7 @@ def process_query(
         min_reviews (int, optional): Minimum number of seller reviews required for items to be returned.
         max_price (float, optional): Maximum price; more expensive items are skipped.
         user_id (int): The account the query belongs to (0 before accounts exist).
+        push (bool): Also send Web Push notifications for this query.
 
     Returns:
         tuple: (message, is_new_query)
@@ -114,7 +117,7 @@ def process_query(
     else:
         # add the query to the db
         db.add_query_to_db(
-            processed_query, name, min_stars, min_reviews, max_price, user_id
+            processed_query, name, min_stars, min_reviews, max_price, user_id, push
         )
         return "Query added.", True
 
@@ -178,7 +181,7 @@ def process_remove_query(number, user_id=0):
 
 
 def process_update_query(
-    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0, push=None
 ):
     """
     Process the update of a query in the database.
@@ -224,7 +227,7 @@ def process_update_query(
 
     # Update the query in the database
     if db.update_query_in_db(
-        query_id, processed_query, name, min_stars, min_reviews, max_price, user_id
+        query_id, processed_query, name, min_stars, min_reviews, max_price, user_id, push
     ):
         return "Query updated.", True
     else:
@@ -371,37 +374,66 @@ def get_user_feedback(profile_id):
     return _remember_feedback(profile_id, result)
 
 
+def _scrape(vinted, by_url, queue, items_per_query):
+    """Scrape each address once and hand the unseen items to every query that uses it."""
+    for url, query_ids in by_url.items():
+        try:
+            all_items = vinted.items.search(url, nbr_items=items_per_query)
+        except Exception as e:
+            logger.error(f"Scraping {url} failed: {e}")
+            continue
+        # Filter to only include new items. This should reduce the amount of db calls.
+        data = [item for item in all_items if item.is_new_item()]
+        for query_id in query_ids:
+            queue.put((data, query_id))
+        logger.info(f"Scraped {len(data)} items for query: {url} ({len(query_ids)} subscriber(s))")
+
+
 def process_items(queue):
     """
-    Process all queries from the database, search for items, and put them in the queue.
-    Uses the global items_queue by default, but can accept a custom queue for backward compatibility.
+    Scrape every query in the database and put the unseen items in the queue.
 
     Args:
-        queue (Queue, optional): The queue to put the items in. Defaults to the global items_queue.
-
-    Returns:
-        None
+        queue (Queue): The queue the extractor reads the scraped items from.
     """
-
     all_queries = db.get_queries()
     # Several accounts often watch the same search: scrape each distinct URL once
     by_url = {}
     for query in all_queries:
         by_url.setdefault(query[1], []).append(query[0])
 
-    # Initialize Vinted
-    vinted = Vinted()
-
-    # Get the number of items per query from the database
     items_per_query = int(db.get_parameter("items_per_query"))
+    _scrape(Vinted(), by_url, queue, items_per_query)
+    # Heartbeat for the status indicator in the interface
+    db.set_parameter("last_scrape_at", str(int(time.time())))
 
-    for url, query_ids in by_url.items():
-        all_items = vinted.items.search(url, nbr_items=items_per_query)
-        # Filter to only include new items. This should reduce the amount of db calls.
-        data = [item for item in all_items if item.is_new_item()]
-        for query_id in query_ids:
-            queue.put((data, query_id))
-        logger.info(f"Scraped {len(data)} items for query: {url} ({len(query_ids)} subscriber(s))")
+
+def process_pending_scans(queue):
+    """
+    Scrape queries that were just added or edited, without waiting for the next cycle.
+    Runs every few seconds and does nothing when nobody changed a query.
+    """
+    pending = db.pop_pending_scans()
+    if not pending:
+        return
+    by_url = {}
+    for query_id, url in pending:
+        by_url.setdefault(url, []).append(query_id)
+    logger.info(f"Immediate scan for {len(pending)} new or edited query(ies)")
+    _scrape(Vinted(), by_url, queue, int(db.get_parameter("items_per_query")))
+
+
+def _prefetch_feedback(items):
+    """Look up the sellers of unseen items in parallel; the results land in the cache."""
+    sellers = {
+        (item.raw_data.get("user") or {}).get("id")
+        for item in items
+    }
+    sellers.discard(None)
+    sellers = [s for s in sellers if s not in _user_feedback_cache]
+    if len(sellers) > 1:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(get_user_feedback, sellers))
 
 
 def clear_item_queue(items_queue, new_items_queue):
@@ -427,6 +459,9 @@ def clear_item_queue(items_queue, new_items_queue):
                 f"First run for query {query_id}: recording {len(data)} item(s) "
                 f"without notifying, so the existing catalogue is not replayed."
             )
+
+        # The seller lookups are what makes a first scan slow: do them side by side
+        _prefetch_feedback([item for item in data if not db.is_item_in_db_by_id(item.id, owner)])
 
         to_notify = []
         for item in reversed(data):
@@ -522,7 +557,12 @@ def clear_item_queue(items_queue, new_items_queue):
             )
             # add the item to the queue
             # (account, message, link, link text, buy link, buy text)
-            new_items_queue.put((owner, content, item.url, "Open Vinted", None, None))
+            push_payload = None
+            if db.get_query_push(query_id):
+                push_payload = push.item_payload(
+                    item.title, f"{item.price} {item.currency}", item.url, item.photo
+                )
+            new_items_queue.put((owner, content, item.url, "Open Vinted", None, None, push_payload))
 
 
 _PLACEHOLDER = re.compile(r"\{(title|price|brand|image)\}")
@@ -578,7 +618,7 @@ def check_version():
         ver = db.get_parameter("version")
         # Get latest version from the repository
         url = f"{github_url}/releases/latest"
-        response = requests.get(url)
+        response = requests.get(url, timeout=5)
 
         if response.status_code == 200:
             latest_version = response.url.split("/")[-1]

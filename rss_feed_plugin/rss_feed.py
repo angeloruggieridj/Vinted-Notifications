@@ -63,6 +63,12 @@ def build_feed(user_id):
 def create_app():
     app = Flask(__name__)
 
+    @app.after_request
+    def harden(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
     @app.route("/feed/<token>")
     def user_feed(token):
         user_id = db.get_user_id_by_feed_token(token)
@@ -90,7 +96,10 @@ def rss_feed_process(queue=None):
     try:
         port = int(db.get_parameter("rss_port") or 8080)
         logger.info(f"Starting RSS feed server on port {port}")
-        create_app().run(host="0.0.0.0", port=port)
+        from waitress import serve
+
+        # A production server with bounded threads/connections instead of Flask's development one
+        serve(create_app(), host="0.0.0.0", port=port, threads=4, connection_limit=100, channel_timeout=30, max_request_body_size=1024)
     except (KeyboardInterrupt, SystemExit):
         logger.info("RSS feed process stopped")
     except Exception as e:

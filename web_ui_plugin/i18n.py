@@ -42,6 +42,22 @@ JS_MESSAGES = (
     "Show",
     "Dismiss",
     "Install app",
+    "Server running",
+    "Server starting",
+    "Scraper not responding",
+    "Server running, an update is available",
+    "Server unreachable",
+    "At least %(n)s characters",
+    "%(n)s more characters needed",
+    "Strong",
+    "Acceptable: a few random words are stronger",
+    "This browser cannot receive push notifications.",
+    "Add the app to the Home Screen to receive notifications on this iPhone or iPad.",
+    "Blocked in the browser settings for this site.",
+    "Off on this device",
+    "On for this device",
+    "Turn off",
+    "Turn on",
 )
 
 _catalogs = {}

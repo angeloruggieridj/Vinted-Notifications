@@ -1,6 +1,7 @@
 import multiprocessing
 import time
 import os
+from datetime import datetime
 import db
 from apscheduler.schedulers.background import BackgroundScheduler
 from logger import get_logger
@@ -20,6 +21,7 @@ if not os.path.exists("./data/vinted_notifications.db"):
 db.ensure_schema()
 
 import core
+import push
 from rss_feed_plugin.rss_feed import rss_feed_process
 from web_ui_plugin.web_ui import web_ui_process
 
@@ -45,6 +47,19 @@ def scraper_process(items_queue):
         seconds=current_query_refresh_delay,
         args=[items_queue],
         name="scraper",
+        next_run_time=datetime.now(),  # scan at start-up instead of one delay later
+        max_instances=1,
+        coalesce=True,
+    )
+    # A query that was just added or edited is scraped within seconds, not at the next cycle
+    scraper_scheduler.add_job(
+        core.process_pending_scans,
+        "interval",
+        seconds=2,
+        args=[items_queue],
+        name="pending_scans",
+        max_instances=1,
+        coalesce=True,
     )
     scraper_scheduler.start()
     try:
@@ -72,7 +87,13 @@ def dispatcher_function(input_queue, telegram_queue):
     try:
         while True:
             # Notifications are addressed to an account; the Telegram process routes them
-            telegram_queue.put(input_queue.get())
+            owner, content, url, text, buy_url, buy_text, push_payload = input_queue.get()
+            if push_payload:
+                try:
+                    push.send_to_user(owner, push_payload)
+                except Exception as e:
+                    logger.error(f"Push notification failed: {e}", exc_info=True)
+            telegram_queue.put((owner, content, url, text, buy_url, buy_text))
     except (KeyboardInterrupt, SystemExit):
         logger.info("Dispatcher process stopped")
     except Exception as e:

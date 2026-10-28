@@ -25,9 +25,10 @@
         <label for="username" class="form-label">{{ _("Username") }}</label>
         <input type="text" class="form-control mb-3" id="username" name="username" value="{{ username }}" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
         <label for="password" class="form-label">{{ _("Password") }}</label>
-        <input type="password" class="form-control mb-3" id="password" name="password" minlength="8" autocomplete="new-password" required>
+        <input type="password" class="form-control mb-3" id="password" name="password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
+        <div class="form-text mb-3 mt-n2">{{ _("At least %(n)s characters; a phrase of a few words works well. Common and breached passwords are refused.", n=min_password_length) }}</div>
         <label for="confirm_password" class="form-label">{{ _("Repeat password") }}</label>
-        <input type="password" class="form-control mb-3" id="confirm_password" name="confirm_password" minlength="8" autocomplete="new-password" required>
+        <input type="password" class="form-control mb-3" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required>
         <button type="submit" class="btn btn-primary w-100">{{ _("Create an account") }}</button>
     </form>
     <p class="text-center mt-3 mb-0"><a href="/login">{{ _("I already have an account") }}</a></p>

@@ -40,6 +40,12 @@ def ensure_schema():
             conn.execute("ALTER TABLE queries ADD COLUMN min_reviews INTEGER")
         if "max_price" not in cols:
             conn.execute("ALTER TABLE queries ADD COLUMN max_price REAL")
+        # pending_scan: the query was just added or edited and should be scraped right away
+        # rather than at the next scheduled cycle. push: send Web Push notifications for it.
+        if "pending_scan" not in cols:
+            conn.execute("ALTER TABLE queries ADD COLUMN pending_scan INTEGER NOT NULL DEFAULT 0")
+        if "push" not in cols:
+            conn.execute("ALTER TABLE queries ADD COLUMN push INTEGER NOT NULL DEFAULT 0")
         item_cols = [r[1] for r in conn.execute("PRAGMA table_info(items)")]
         for col, col_type in (
             ("seller_id", "INTEGER"),
@@ -60,6 +66,16 @@ def ensure_schema():
                 disabled INTEGER NOT NULL DEFAULT 0,
                 created_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                user_agent TEXT,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
             CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
@@ -246,7 +262,7 @@ def get_queries_overview(user_id):
         conn = sqlite3.connect(DB_PATH)
         return conn.execute(
             "SELECT q.id, q.query, q.query_name, q.last_item, q.min_stars, q.min_reviews, q.max_price, "
-            "COUNT(i.item), AVG(i.price) FROM queries q LEFT JOIN items i ON i.query_id = q.id "
+            "COUNT(i.item), AVG(i.price), q.push FROM queries q LEFT JOIN items i ON i.query_id = q.id "
             "WHERE q.user_id = ? GROUP BY q.id ORDER BY q.id",
             (user_id,),
         ).fetchall()
@@ -276,15 +292,15 @@ def is_query_in_db(processed_query, user_id):
 
 
 def add_query_to_db(
-    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0
+    query, name=None, min_stars=None, min_reviews=None, max_price=None, user_id=0, push=False
 ):
     conn = None
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
-            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews, max_price, user_id) "
-            "VALUES (?, NULL, ?, ?, ?, ?, ?)",
-            (query, name or None, min_stars, min_reviews, max_price, user_id),
+            "INSERT INTO queries (query, last_item, query_name, min_stars, min_reviews, max_price, user_id, push, pending_scan) "
+            "VALUES (?, NULL, ?, ?, ?, ?, ?, ?, 1)",
+            (query, name or None, min_stars, min_reviews, max_price, user_id, int(bool(push))),
         )
         conn.commit()
     except Exception:
@@ -346,7 +362,7 @@ def remove_all_queries_from_db(user_id):
 
 
 def update_query_in_db(
-    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0
+    query_id, query, name, min_stars=None, min_reviews=None, max_price=None, user_id=0, push=None
 ):
     """
     Update an existing query in the database.
@@ -358,6 +374,10 @@ def update_query_in_db(
         min_stars (float, optional): Minimum seller stars (0-5)
         min_reviews (int, optional): Minimum number of seller reviews
         max_price (float, optional): Maximum item price
+        push (bool, optional): Web Push notifications on/off; None keeps the current choice
+
+    A changed address starts over (the catalogue is recorded again without notifying) and
+    every edit asks for an immediate scan.
 
     Returns:
         bool: True if the query was updated successfully, False otherwise
@@ -366,18 +386,79 @@ def update_query_in_db(
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        updated = cursor.execute(
-            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=?, max_price=? WHERE id=? AND user_id=?",
-            (query, name, min_stars, min_reviews, max_price, query_id, user_id),
-        ).rowcount
+        row = cursor.execute(
+            "SELECT query FROM queries WHERE id=? AND user_id=?", (query_id, user_id)
+        ).fetchone()
+        if row is None:
+            return False
+        reset = ", last_item=NULL" if row[0] != query else ""
+        push_sql, push_args = ("", ())
+        if push is not None:
+            push_sql, push_args = ", push=?", (int(bool(push)),)
+        cursor.execute(
+            "UPDATE queries SET query=?, query_name=?, min_stars=?, min_reviews=?, max_price=?, "
+            "pending_scan=1" + reset + push_sql + " WHERE id=? AND user_id=?",
+            (query, name, min_stars, min_reviews, max_price, *push_args, query_id, user_id),
+        )
         conn.commit()
-        return updated > 0
+        return True
     except Exception:
         print_exc()
         return False
     finally:
         if conn:
             conn.close()
+
+
+def pop_pending_scans():
+    """Queries waiting for an immediate scan as (id, url); the flag is cleared as they are taken."""
+    conn = None
+    try:
+        conn = get_db_connection()
+        rows = conn.execute("SELECT id, query FROM queries WHERE pending_scan=1 ORDER BY id").fetchall()
+        if rows:
+            conn.executemany("UPDATE queries SET pending_scan=0 WHERE id=?", [(r[0],) for r in rows])
+            conn.commit()
+        return rows
+    except Exception:
+        print_exc()
+        return []
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_query_push(query_id):
+    """Should new items of this query also be sent as push notifications?"""
+    rows = _fetchall("SELECT push FROM queries WHERE id=?", (query_id,))
+    return bool(rows and rows[0]["push"])
+
+
+def add_push_subscription(user_id, endpoint, p256dh, auth, user_agent=""):
+    import time
+
+    # The same browser re-subscribing (or another account signing in on it) replaces the row
+    _execute(
+        "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(endpoint) DO UPDATE SET user_id=excluded.user_id, "
+        "p256dh=excluded.p256dh, auth=excluded.auth, user_agent=excluded.user_agent",
+        (user_id, endpoint, p256dh, auth, (user_agent or "")[:300], int(time.time())),
+    )
+
+
+def get_push_subscriptions(user_id):
+    rows = _fetchall(
+        "SELECT id, endpoint, p256dh, auth, user_agent, created_at FROM push_subscriptions WHERE user_id=? ORDER BY id",
+        (user_id,),
+    )
+    return [dict(r) for r in rows]
+
+
+def remove_push_subscription(endpoint, user_id=None):
+    if user_id is None:
+        _execute("DELETE FROM push_subscriptions WHERE endpoint=?", (endpoint,))
+    else:
+        _execute("DELETE FROM push_subscriptions WHERE endpoint=? AND user_id=?", (endpoint, user_id))
 
 
 def add_to_allowlist(country, user_id):
@@ -786,7 +867,7 @@ def delete_user(user_id):
     conn = None
     try:
         conn = get_db_connection()
-        for table in ("items", "queries", "allowlist", "user_settings"):
+        for table in ("items", "queries", "allowlist", "user_settings", "push_subscriptions"):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))
         conn.commit()

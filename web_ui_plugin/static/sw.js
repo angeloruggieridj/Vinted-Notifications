@@ -3,13 +3,13 @@
  * It deliberately caches no pages and no API responses: listings and settings always come
  * from the server (and may sit behind a login). Only static assets are cached.
  */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL_CACHE = 'vn-shell-' + VERSION;
 const ASSET_CACHE = 'vn-assets-' + VERSION;
 const PRECACHE = ['/offline', '/static/css/custom.css', '/static/icons/icon-192.png'];
 const CDN_HOSTS = ['cdn.jsdelivr.net'];
 // Never touched by the worker: live data and anything that changes state
-const NETWORK_ONLY = ['/items/fragment', '/api/', '/control', '/login', '/logout', '/security', '/sw.js'];
+const NETWORK_ONLY = ['/items/fragment', '/api/', '/health', '/control', '/login', '/logout', '/security', '/sw.js'];
 
 self.addEventListener('install', function (event) {
     event.waitUntil(
@@ -60,6 +60,39 @@ self.addEventListener('fetch', function (event) {
                 }).catch(function () { return cached; });
                 return cached || network;
             });
+        })
+    );
+});
+
+// ---- Web Push: a new listing arrived for a query that has notifications switched on
+self.addEventListener('push', function (event) {
+    let data = {};
+    try { data = event.data ? event.data.json() : {}; } catch (e) { data = {title: event.data ? event.data.text() : ''}; }
+    const options = {
+        body: data.body || '',
+        icon: '/static/icons/icon-192.png',
+        badge: '/static/icons/icon-192.png',
+        tag: data.tag || undefined,  // the same listing never stacks twice
+        data: {url: data.url || '/items'}
+    };
+    if (data.image && /^https:/.test(data.image)) options.image = data.image;
+    event.waitUntil(self.registration.showNotification(data.title || 'Vinted Notifications', options));
+});
+
+self.addEventListener('notificationclick', function (event) {
+    event.notification.close();
+    const target = (event.notification.data && event.notification.data.url) || '/items';
+    // Listings open on Vinted; internal paths open (or focus) the app
+    if (/^https:/.test(target)) {
+        event.waitUntil(clients.openWindow(target));
+        return;
+    }
+    event.waitUntil(
+        clients.matchAll({type: 'window', includeUncontrolled: true}).then(function (windows) {
+            for (const client of windows) {
+                if ('focus' in client) { client.navigate(target); return client.focus(); }
+            }
+            return clients.openWindow(target);
         })
     );
 });

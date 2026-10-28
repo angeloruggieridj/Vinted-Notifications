@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   vinted-notifications:
     # Build from this repository (fork) instead of pulling the upstream image
@@ -15,7 +13,30 @@ services:
     environment:
       # Optional: password for the web interface (can also be set from Configuration > Security)
       - VN_WEB_PASSWORD=${VN_WEB_PASSWORD:-}
+      # Behind a reverse proxy (see docker-compose.caddy.yml): trust X-Forwarded-* and send cookies over HTTPS only
+      - VN_TRUST_PROXY=${VN_TRUST_PROXY:-}
+      - VN_COOKIE_SECURE=${VN_COOKIE_SECURE:-}
+      # Set to 0 on servers without internet access to skip the breached-password lookup
+      - VN_PWNED_CHECK=${VN_PWNED_CHECK:-1}
+      # Contact address or https URL sent to push services (defaults to this site's own address)
+      - VN_VAPID_SUBJECT=${VN_VAPID_SUBJECT:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    # Hardening: the entrypoint only needs to fix volume ownership and drop to an unprivileged user
     read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
     tmpfs:
       - /tmp
 

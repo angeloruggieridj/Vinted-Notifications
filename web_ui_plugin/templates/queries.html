@@ -39,7 +39,11 @@
                 <button type="submit" class="btn btn-primary w-100">{{ _("Add query") }}</button>
             </div>
         </div>
-        <div class="form-text mt-2">{{ _("Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.") }}</div>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="push_new" name="push" checked>
+            <label class="form-check-label" for="push_new">{{ _("Push notifications for this query") }}</label>
+        </div>
+        <div class="form-text mt-2">{{ _("Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.") }} {{ _("Push messages reach the devices where you turned notifications on in Settings.") }}</div>
     </form>
 </div>
 
@@ -53,6 +57,7 @@
                 {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> {{ _("up to %(price)s", price=query.max_price) }}</span>{% endif %}
                 {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ _("%(n)s+ stars", n=query.min_stars) }}</span>{% endif %}
                 {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ _("%(n)s+ reviews", n=query.min_reviews) }}</span>{% endif %}
+                {% if query.push %}<span class="chip"><i class="bi bi-bell-fill"></i> {{ _("Push") }}</span>{% endif %}
                 {% if not (query.max_price or query.min_stars or query.min_reviews) %}<span class="chip chip-empty">{{ _("No filters") }}</span>{% endif %}
             </div>
         </div>
@@ -97,6 +102,10 @@
                                 <label for="min_reviews{{ query.id }}" class="form-label">{{ _("Min reviews") }}</label>
                                 <input type="number" class="form-control" id="min_reviews{{ query.id }}" name="min_reviews" min="0" step="1" value="{{ query.min_reviews }}" placeholder="{{ _('Any') }}">
                             </div>
+                        </div>
+                        <div class="form-check form-switch mt-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="push{{ query.id }}" name="push" {% if query.push %}checked{% endif %}>
+                            <label class="form-check-label" for="push{{ query.id }}">{{ _("Push notifications for this query") }}</label>
                         </div>
                     </div>
                     <div class="modal-footer">

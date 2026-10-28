@@ -76,14 +76,42 @@
                 </div>
                 <p class="ios-foot">{{ _("Listings with any of these words in the title are ignored.") }}</p>
 
-                <div class="ios-title">{{ _("Help") }}</div>
+                <div class="ios-title">{{ _("About") }}</div>
                 <div class="ios-group">
+                    <div class="ios-row">
+                        <span class="ios-label"><span class="row-ico" style="--c: #00A8B0"><i class="bi bi-info-circle-fill"></i></span>{{ _("Version") }}</span>
+                        <span class="d-inline-flex align-items-center gap-2">
+                            {% if current_version is defined %}<span class="text-muted">v{{ current_version }}</span>{% endif %}
+                            {% if is_up_to_date %}<span class="chip chip-ok"><i class="bi bi-check-circle-fill"></i> {{ _("Up to date") }}</span>
+                            {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener"><i class="bi bi-arrow-up-circle-fill"></i> {{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
+                        </span>
+                    </div>
+                    <a class="ios-row ios-link" href="{{ github_url }}#readme" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #007AFF"><i class="bi bi-book-fill"></i></span>{{ _("Documentation") }}</span><i class="bi bi-box-arrow-up-right chev"></i></a>
+                    <a class="ios-row ios-link" href="{{ github_url }}/issues" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-bug-fill"></i></span>{{ _("Report an issue") }}</span><i class="bi bi-box-arrow-up-right chev"></i></a>
+                    <a class="ios-row ios-link" href="{{ github_url }}" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #1C1C1E"><i class="bi bi-github"></i></span>GitHub</span><i class="bi bi-box-arrow-up-right chev"></i></a>
                     <button type="button" class="ios-row ios-button" onclick="vnWelcome.open()"><span class="ios-label"><span class="row-ico" style="--c: #FF9500"><i class="bi bi-stars"></i></span>{{ _("Show the welcome screen") }}</span></button>
+                    <button type="button" class="ios-row ios-button js-install" hidden><span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-phone"></i></span>{{ _("Install app") }}</span></button>
                 </div>
+                <p class="ios-foot">{{ _("Unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB.") }}</p>
             </section>
 
             <!-- Notifications (personal) -->
             <section class="pane" id="pane-notifications">
+                <div class="ios-title">{{ _("Push notifications") }}</div>
+                <div class="ios-group" id="pushGroup">
+                    <div class="ios-row">
+                        <span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-bell-fill"></i></span>{{ _("This device") }}
+                            <span class="ios-sub" id="pushStatus">{{ _("Checking...") }}</span></span>
+                        <button type="button" class="btn btn-sm btn-primary" id="pushToggle" hidden></button>
+                    </div>
+                    <button type="button" class="ios-row ios-button" id="pushTest" hidden><span class="ios-label">{{ _("Send a test notification") }}</span></button>
+                    <div class="ios-row">
+                        <span class="ios-label">{{ _("Devices registered") }}</span>
+                        <span class="text-muted" id="pushDevices">{{ push_devices }}</span>
+                    </div>
+                </div>
+                <p class="ios-foot">{{ _("Pick which queries send a push when you add or edit them. On iPhone and iPad, add the app to the Home Screen first (Share, then Add to Home Screen) and open it from there.") }}</p>
+
                 <div class="ios-title">{{ _("Telegram bot") }}</div>
                 <div class="ios-group">
                     <div class="ios-row">
@@ -225,12 +253,12 @@
                 <label class="ios-row" for="current_password"><span class="ios-label">{{ _("Current password") }}</span>
                     <input type="password" class="ios-input" id="current_password" name="current_password" autocomplete="current-password" required></label>
                 <label class="ios-row" for="new_password"><span class="ios-label">{{ _("New password") }}</span>
-                    <input type="password" class="ios-input" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
+                    <input type="password" class="ios-input" id="new_password" name="new_password" minlength="{{ min_password_length }}" data-pw-meter="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <label class="ios-row" for="confirm_password"><span class="ios-label">{{ _("Repeat password") }}</span>
                     <input type="password" class="ios-input" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <button type="submit" class="ios-row ios-button">{{ _("Change password") }}</button>
             </form>
-            <p class="ios-foot">{{ _("At least %(n)s characters.", n=min_password_length) }} {{ _("Changing a password signs that account out of every browser.") }}</p>
+            <p class="ios-foot">{{ _("At least %(n)s characters; a phrase of a few words works well. Common and breached passwords are refused.", n=min_password_length) }} {{ _("Changing a password signs that account out of every browser.") }}</p>
 
             {% if is_admin %}
             <div class="ios-title">{{ _("Good to know") }}</div>
@@ -262,12 +290,12 @@
                     <input type="password" class="ios-input" id="current_password" name="current_password" autocomplete="current-password" required></label>
                 {% endif %}
                 <label class="ios-row" for="new_password"><span class="ios-label">{{ _('New password') if password_set else _('Password') }}</span>
-                    <input type="password" class="ios-input" id="new_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
+                    <input type="password" class="ios-input" id="new_password" name="new_password" minlength="{{ min_password_length }}" data-pw-meter="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <label class="ios-row" for="confirm_password"><span class="ios-label">{{ _("Repeat password") }}</span>
                     <input type="password" class="ios-input" id="confirm_password" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <button type="submit" class="ios-row ios-button">{{ _('Change password') if password_set else _('Set password') }}</button>
             </form>
-            <p class="ios-foot">{{ _("At least %(n)s characters.", n=min_password_length) }}</p>
+            <p class="ios-foot">{{ _("At least %(n)s characters; a phrase of a few words works well. Common and breached passwords are refused.", n=min_password_length) }}</p>
 
             {% if password_set %}
             <div class="ios-title">{{ _("Remove password") }}</div>
@@ -288,7 +316,7 @@
                 <label class="ios-row" for="admin_username"><span class="ios-label">{{ _("Administrator username") }}</span>
                     <input type="text" class="ios-input" id="admin_username" name="username" pattern="[A-Za-z0-9_.\-]{3,32}" autocomplete="username" autocapitalize="none" required></label>
                 <label class="ios-row" for="admin_password"><span class="ios-label">{{ _("Password") }}</span>
-                    <input type="password" class="ios-input" id="admin_password" name="new_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
+                    <input type="password" class="ios-input" id="admin_password" name="new_password" minlength="{{ min_password_length }}" data-pw-meter="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <label class="ios-row" for="admin_confirm"><span class="ios-label">{{ _("Repeat password") }}</span>
                     <input type="password" class="ios-input" id="admin_confirm" name="confirm_password" minlength="{{ min_password_length }}" autocomplete="new-password" required></label>
                 <button type="submit" class="ios-row ios-button">{{ _("Turn on accounts") }}</button>
@@ -437,5 +465,43 @@
         });
         if (hidden.value) hidden.value.split('|||').forEach(addBanword);
     });
-</script>
+
+        // ---- Web Push controls
+        (function () {
+            const status = document.getElementById('pushStatus');
+            const toggle = document.getElementById('pushToggle');
+            const test = document.getElementById('pushTest');
+            const devices = document.getElementById('pushDevices');
+            if (!status || !window.vnPush) return;
+            const texts = {
+                unsupported: vnT('This browser cannot receive push notifications.'),
+                'ios-install': vnT('Add the app to the Home Screen to receive notifications on this iPhone or iPad.'),
+                denied: vnT('Blocked in the browser settings for this site.'),
+                off: vnT('Off on this device'),
+                on: vnT('On for this device')
+            };
+            function refresh() {
+                vnPush.state().then(function (state) {
+                    status.textContent = texts[state];
+                    toggle.hidden = !(state === 'off' || state === 'on');
+                    toggle.textContent = state === 'on' ? vnT('Turn off') : vnT('Turn on');
+                    toggle.className = 'btn btn-sm ' + (state === 'on' ? 'btn-outline-secondary' : 'btn-primary');
+                    toggle.dataset.state = state;
+                    test.hidden = state !== 'on';
+                });
+            }
+            toggle.addEventListener('click', function () {
+                toggle.disabled = true;
+                (toggle.dataset.state === 'on' ? vnPush.disable() : vnPush.enable())
+                    .then(function (result) { if (result && result.devices !== undefined) devices.textContent = result.devices; })
+                    .catch(function () { status.textContent = texts.denied; })
+                    .then(function () { toggle.disabled = false; refresh(); });
+            });
+            test.addEventListener('click', function () {
+                test.disabled = true;
+                vnPush.test().then(function (r) { status.textContent = r.message || ''; }).catch(function () {}).then(function () { test.disabled = false; });
+            });
+            refresh();
+        })();
+    </script>
 {% endblock %}

@@ -26,12 +26,14 @@ import json
 import os
 import re
 import secrets
+import threading
 import time
 import zoneinfo
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 from logger import get_logger
-from web_ui_plugin import i18n
+import push
+from web_ui_plugin import i18n, passwords
 
 # Get logger for this module
 logger = get_logger(__name__)
@@ -46,7 +48,7 @@ LEGACY_USER = {"id": 0, "username": "", "role": "admin", "disabled": 0, "legacy"
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
 MAX_LOGIN_FAILURES = 5
 LOGIN_LOCK_SECONDS = 60
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = passwords.MIN_LENGTH
 MAX_SIGNUPS_PER_HOUR = 5
 _login_failures = {}  # ip -> (failures, locked_until)
 _signups = collections.defaultdict(list)  # ip -> signup timestamps
@@ -61,6 +63,7 @@ PUBLIC_ENDPOINTS = (
     "manifest",
     "service_worker",
     "offline",
+    "health",
 )
 
 
@@ -153,6 +156,18 @@ def admin_required(view):
     return wrapper
 
 
+def admin_only_hidden(view):
+    """Administrators only; everyone else gets a plain 404, as if the page did not exist."""
+
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not is_admin():
+            abort(404)
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
 def _sign_in(user):
     session.clear()
     session["uid"] = user["id"]
@@ -229,6 +244,8 @@ app.config.update(
     # Set VN_COOKIE_SECURE=1 when the interface is served over HTTPS
     SESSION_COOKIE_SECURE=os.environ.get("VN_COOKIE_SECURE", "") not in ("", "0", "false"),
     PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
+    # Nothing in this interface uploads files: refuse oversized bodies before they are read
+    MAX_CONTENT_LENGTH=256 * 1024,
 )
 if os.environ.get("VN_TRUST_PROXY", "") not in ("", "0", "false"):
     # Behind a reverse proxy: trust its X-Forwarded-* headers (client IP, scheme, host)
@@ -237,14 +254,108 @@ if os.environ.get("VN_TRUST_PROXY", "") not in ("", "0", "false"):
 app.jinja_env.globals.update(_=tr, _n=tr_n)
 
 
+# ------------------------------------------------------------------ request limits
+class RateLimiter:
+    """Sliding-window limiter kept in memory: enough to blunt floods and password guessing
+    against a single instance (it is not shared between processes or restarts)."""
+
+    def __init__(self):
+        self._hits = collections.defaultdict(collections.deque)
+        self._lock = threading.Lock()
+        self._swept = time.time()
+
+    def allow(self, key, limit, window):
+        now = time.time()
+        with self._lock:
+            if now - self._swept > 300:  # forget idle clients so the table cannot grow forever
+                for k in [k for k, q in self._hits.items() if not q or q[-1] < now - 3600]:
+                    del self._hits[k]
+                self._swept = now
+            hits = self._hits[key]
+            while hits and hits[0] <= now - window:
+                hits.popleft()
+            if len(hits) >= limit:
+                return False
+            hits.append(now)
+            return True
+
+
+limiter = RateLimiter()
+LIMIT_PAGES = (240, 60)  # requests per minute and client for pages and APIs
+LIMIT_STATIC = (900, 60)  # static files: a page loads a dozen of them
+LIMIT_AUTH = (10, 60)  # sign-in and sign-up attempts per minute and client
+LIMIT_SENSITIVE = (30, 60)  # push test, password changes, account management
+
+
+@app.before_request
+def throttle_and_check_origin():
+    """Per-client rate limits and a same-origin check on everything that changes state."""
+    if request.endpoint == "health":
+        return None
+    ip = _client_ip()
+    if request.endpoint == "static":
+        allowed = limiter.allow(("static", ip), *LIMIT_STATIC)
+    else:
+        allowed = limiter.allow(("page", ip), *LIMIT_PAGES)
+        if allowed and request.method == "POST":
+            if request.endpoint in ("login", "register"):
+                allowed = limiter.allow(("auth", ip), *LIMIT_AUTH)
+            elif request.endpoint in ("api_push_test", "change_own_password", "set_password", "create_user", "update_user", "enable_accounts"):
+                allowed = limiter.allow(("sensitive", ip), *LIMIT_SENSITIVE)
+    if not allowed:
+        response = jsonify({"status": "error", "message": tr("Too many requests. Try again in a minute.")})
+        response.status_code = 429
+        response.headers["Retry-After"] = "60"
+        return response
+
+    # CSRF: browsers always send Origin (or at least Sec-Fetch-Site) on cross-site writes
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("Origin") or request.headers.get("Referer")
+        if origin:
+            if origin != "null" and urlparse(origin).netloc != request.host:
+                abort(403)
+            if origin == "null":
+                abort(403)
+        elif request.headers.get("Sec-Fetch-Site") == "cross-site":
+            abort(403)
+    return None
+
+
+CSP = "; ".join(
+    (
+        "default-src 'self'",
+        # Pages carry inline handlers and small scripts; Bootstrap comes from jsDelivr
+        "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+        "font-src 'self' https://cdn.jsdelivr.net data:",
+        "img-src 'self' data: https:",  # listing photos come from Vinted's CDN
+        "connect-src 'self'",
+        "worker-src 'self'",
+        "manifest-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    )
+)
+
+
 @app.after_request
 def security_headers(response):
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
-    response.headers.setdefault("Referrer-Policy", "same-origin")
+    headers = response.headers
+    headers.setdefault("X-Content-Type-Options", "nosniff")
+    headers.setdefault("X-Frame-Options", "DENY")
+    headers.setdefault("Referrer-Policy", "same-origin")
+    headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+    headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    if response.mimetype in ("text/html", "application/manifest+json"):
+        headers.setdefault("Content-Security-Policy", CSP)
+    if request.is_secure:
+        headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     if request.endpoint != "static" and response.mimetype == "text/html":
         # Pages show per-account data: never let a shared cache keep them
-        response.headers["Cache-Control"] = "private, no-store"
+        headers["Cache-Control"] = "private, no-store"
     return response
 
 
@@ -318,10 +429,10 @@ def register():
             error = tr("Too many sign-ups from this address. Try again later.")
         elif not USERNAME_RE.match(username):
             error = tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores.")
-        elif len(password) < MIN_PASSWORD_LENGTH:
-            error = tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH)
         elif password != request.form.get("confirm_password", ""):
             error = tr("The two passwords do not match.")
+        elif _password_error(password, username):
+            error = _password_error(password, username)
         else:
             user_id = db.create_user(username, generate_password_hash(password), "user")
             if user_id is None:
@@ -331,7 +442,7 @@ def register():
                 _sign_in(db.get_user(user_id))
                 flash(tr("Welcome! Your account is ready."), "success")
                 return redirect(url_for("index"))
-    return render_template("register.html", error=error, username=request.form.get("username", "")), (400 if error else 200)
+    return render_template("register.html", error=error, username=request.form.get("username", ""), min_password_length=MIN_PASSWORD_LENGTH), (400 if error else 200)
 
 
 @app.route("/lang/<code>")
@@ -349,12 +460,27 @@ def logout():
     return redirect(url_for("login"))
 
 
-def _password_problem(new, confirm):
-    if len(new) < MIN_PASSWORD_LENGTH:
-        return tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH)
+def _password_error(password, username=""):
+    """A translated reason why the password is not acceptable, or None."""
+    code = passwords.check(password, username)
+    if code is None:
+        return None
+    messages = {
+        passwords.TOO_SHORT: lambda: tr("Use at least %(n)s characters. A few random words make a strong password.", n=MIN_PASSWORD_LENGTH),
+        passwords.TOO_LONG: lambda: tr("Use at most %(n)s characters.", n=passwords.MAX_LENGTH),
+        passwords.COMMON: lambda: tr("That password is too common. Pick something only you would think of."),
+        passwords.CONTAINS_USERNAME: lambda: tr("The password must not contain the username."),
+        passwords.CONTAINS_APP_NAME: lambda: tr("The password must not contain the name of this application."),
+        passwords.PATTERN: lambda: tr("That password is a simple pattern (a keyboard row, a run or a repetition)."),
+        passwords.BREACHED: lambda: tr("That password appears in known data breaches. Choose a different one."),
+    }
+    return messages[code]()
+
+
+def _password_problem(new, confirm, username=""):
     if new != confirm:
         return tr("The two passwords do not match.")
-    return None
+    return _password_error(new, username)
 
 
 # ---- single password (before accounts exist)
@@ -407,7 +533,7 @@ def enable_accounts():
     if not USERNAME_RE.match(username):
         problem = tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores.")
     else:
-        problem = _password_problem(password, request.form.get("confirm_password", ""))
+        problem = _password_problem(password, request.form.get("confirm_password", ""), username)
     if problem:
         flash(problem, "danger")
         return redirect(url_for("config", _anchor="security"))
@@ -433,7 +559,7 @@ def change_own_password():
     if not check_password_hash(user["password_hash"], request.form.get("current_password", "")):
         flash(tr("Current password is wrong."), "danger")
         return redirect(url_for("config", _anchor="security"))
-    problem = _password_problem(request.form.get("new_password", ""), request.form.get("confirm_password", ""))
+    problem = _password_problem(request.form.get("new_password", ""), request.form.get("confirm_password", ""), user["username"])
     if problem:
         flash(problem, "danger")
     else:
@@ -478,8 +604,8 @@ def create_user():
     role = "admin" if request.form.get("role") == "admin" else "user"
     if not USERNAME_RE.match(username):
         flash(tr("Usernames are 3-32 characters: letters, numbers, dots, dashes and underscores."), "danger")
-    elif len(password) < MIN_PASSWORD_LENGTH:
-        flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
+    elif _password_error(password, username):
+        flash(_password_error(password, username), "danger")
     elif db.create_user(username, generate_password_hash(password), role) is None:
         flash(tr("That username is already taken."), "danger")
     else:
@@ -509,8 +635,9 @@ def update_user(user_id):
             flash(tr("Account updated."), "success")
     elif action == "password":
         password = request.form.get("password", "")
-        if len(password) < MIN_PASSWORD_LENGTH:
-            flash(tr("Use at least %(n)s characters.", n=MIN_PASSWORD_LENGTH), "danger")
+        problem = _password_error(password, target["username"])
+        if problem:
+            flash(problem, "danger")
         else:
             db.update_user(user_id, password_hash=generate_password_hash(password))
             flash(tr("Password reset. That account was signed out everywhere."), "success")
@@ -682,6 +809,7 @@ def _queries_overview():
                 "max_price": ("%g" % q[6]) if q[6] else "",
                 "item_count": q[7],
                 "avg_price": round(q[8], 2) if q[8] else None,
+                "push": bool(q[9]),
             }
         )
     return overview
@@ -750,9 +878,10 @@ def add_query():
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
             max_price=parse_max_price(request.form.get("max_price")),
             user_id=current_uid(),
+            push="push" in request.form,
         )
         if is_new_query:
-            flash(tr("Query added: %(query)s", query=query), "success")
+            flash(tr("Query added: %(query)s. Its first scan is starting now.", query=query), "success")
         else:
             flash(tr(message), "warning")
     else:
@@ -797,6 +926,7 @@ def update_query(query_id):
             min_reviews=parse_min_reviews(request.form.get("min_reviews")),
             max_price=parse_max_price(request.form.get("max_price")),
             user_id=current_uid(),
+            push="push" in request.form,
         )
         if success:
             flash(tr("Query updated"), "success")
@@ -1016,11 +1146,12 @@ def config():
         password_set=bool(_legacy_hash()),
         password_env=bool(_env_password()),
         min_password_length=MIN_PASSWORD_LENGTH,
+        push_devices=len(db.get_push_subscriptions(uid)),
     )
 
 
 # Never handed to a template
-SECRET_PARAMETERS = {"web_secret_key", "web_password_hash"}
+SECRET_PARAMETERS = {"web_secret_key", "web_password_hash", "vapid_private_pem", "vapid_subject", "last_scrape_at"}
 
 
 def _valid_json(text, kind):
@@ -1167,6 +1298,80 @@ def clear_allowlist():
 
 # ------------------------------------------------------------------ logs (administrators)
 LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3} - (.+?) - ([A-Z]+) - (.*)$")
+# ------------------------------------------------------------------ status, accounts overview, push
+@app.route("/health")
+def health():
+    """Liveness probe for Docker and monitors: no data, no login."""
+    return jsonify({"ok": True})
+
+
+@app.route("/api/status")
+def api_status():
+    """What the status dot in the footer shows: is the scraper alive, is an update waiting?"""
+    last = _setting_int("last_scrape_at", 0)
+    delay = _setting_int("query_refresh_delay", 60)
+    if not last:
+        scraper = "starting"
+    elif time.time() - last > 3 * delay + 120:
+        scraper = "stale"
+    else:
+        scraper = "ok"
+    return jsonify({"ok": True, "scraper": scraper, "update": not _cached_check_version()[0]})
+
+
+@app.route("/api/users/stats")
+@admin_required
+def api_users_stats():
+    """Fresh query/item counts, so the accounts page can follow the scraper without a reload."""
+    stats = {}
+    for row in db.list_users():
+        stats[str(row["id"])] = tr_n("%(n)s query", "%(n)s queries", row["query_count"]) + " \u00b7 " + tr_n("%(n)s item", "%(n)s items", row["item_count"])
+    return jsonify(stats)
+
+
+@app.route("/api/push/key")
+def api_push_key():
+    return jsonify({"key": push.public_key()})
+
+
+MAX_PUSH_DEVICES = 10
+
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def api_push_subscribe():
+    data = request.get_json(silent=True) or {}
+    if not push.valid_subscription(data):
+        return jsonify({"status": "error", "message": tr("Invalid subscription")}), 400
+    uid = current_uid()
+    known = {s["endpoint"] for s in db.get_push_subscriptions(uid)}
+    if data["endpoint"] not in known and len(known) >= MAX_PUSH_DEVICES:
+        return jsonify({"status": "error", "message": tr("Too many devices. Remove one first.")}), 400
+    db.add_push_subscription(uid, data["endpoint"], data["keys"]["p256dh"], data["keys"]["auth"], request.headers.get("User-Agent", ""))
+    if request.is_secure and not db.get_parameter("vapid_subject"):
+        db.set_parameter("vapid_subject", request.url_root.rstrip("/"))
+    return jsonify({"status": "success", "devices": len(db.get_push_subscriptions(uid))})
+
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def api_push_unsubscribe():
+    data = request.get_json(silent=True) or {}
+    endpoint = data.get("endpoint")
+    if isinstance(endpoint, str):
+        db.remove_push_subscription(endpoint, current_uid())
+    return jsonify({"status": "success", "devices": len(db.get_push_subscriptions(current_uid()))})
+
+
+@app.route("/api/push/test", methods=["POST"])
+def api_push_test():
+    sent = push.send_to_user(
+        current_uid(),
+        push.item_payload(tr("Notifications are on"), tr("You will get a message like this for every new item."), url_for("items")),
+    )
+    if sent:
+        return jsonify({"status": "success", "message": tr("Test notification sent")})
+    return jsonify({"status": "error", "message": tr("No device accepted the notification. Turn notifications on from this device first.")}), 502
+
+
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 LOG_SCAN_LINES = 20000  # only the tail of the file is read
 
@@ -1192,13 +1397,13 @@ def _read_log_entries():
 
 
 @app.route("/logs")
-@admin_required
+@admin_only_hidden
 def logs():
     return render_template("logs.html", levels=LOG_LEVELS)
 
 
 @app.route("/api/logs")
-@admin_required
+@admin_only_hidden
 def api_logs():
     offset = max(0, _int_arg("offset", 0))
     limit = min(max(1, _int_arg("limit", 50)), 500)
@@ -1230,7 +1435,20 @@ def api_logs():
 def web_ui_process():
     logger.info("Web UI process started")
     try:
-        app.run(host="0.0.0.0", port=8000, debug=False)
+        # waitress is a production server: it bounds threads, queued connections and idle
+        # time, which the development server does not
+        from waitress import serve
+
+        serve(
+            app,
+            host="0.0.0.0",
+            port=8000,
+            threads=8,
+            connection_limit=200,
+            channel_timeout=30,
+            max_request_body_size=256 * 1024,
+            ident="vinted-notifications",
+        )
     except (KeyboardInterrupt, SystemExit):
         logger.info("Web UI process stopped")
     except Exception as e:

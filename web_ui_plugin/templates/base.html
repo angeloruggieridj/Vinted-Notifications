@@ -64,26 +64,8 @@
     </main>
 
     <footer class="page-foot">
-        <div class="foot-brand">
-            <img src="{{ url_for('static', filename='icons/icon-192.png') }}" alt="" width="22" height="22">
-            <strong>Vinted Notifications</strong>
-        </div>
-        <div class="foot-meta">
-            {% if current_version is defined %}<span>v{{ current_version }}</span>{% endif %}
-            {% if is_up_to_date is defined %}
-            {% if is_up_to_date %}<span class="chip chip-ok"><i class="bi bi-check-circle-fill"></i> {{ _("Up to date") }}</span>
-            {% else %}<a class="chip chip-warn text-decoration-none" href="{{ github_url }}/releases" target="_blank" rel="noopener"><i class="bi bi-arrow-up-circle-fill"></i> {{ _('Update %(v)s', v=latest_version) }}</a>{% endif %}
-            {% endif %}
-        </div>
-        <nav class="foot-pills" aria-label="{{ _('Links') }}">
-            {% if github_url is defined %}
-            <a href="{{ github_url }}#readme" target="_blank" rel="noopener"><i class="bi bi-book"></i> {{ _("Documentation") }}</a>
-            <a href="{{ github_url }}/issues" target="_blank" rel="noopener"><i class="bi bi-bug"></i> {{ _("Report an issue") }}</a>
-            <a href="{{ github_url }}" target="_blank" rel="noopener"><i class="bi bi-github"></i> GitHub</a>
-            {% endif %}
-            <button type="button" class="js-install" hidden><i class="bi bi-phone"></i> {{ _("Install app") }}</button>
-        </nav>
-        <p class="foot-legal">{{ _("Unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB.") }}</p>
+        <span class="status-dot" id="serverStatus" data-state="ok" role="status" tabindex="0"
+              aria-label="{{ _('Server status') }}" title="{{ _('Server status') }}"></span>
     </footer>
 </div>
 
@@ -141,6 +123,117 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ---- server status dot: green when the scraper is running, amber when it is late or an update is waiting, red when unreachable
+    (function () {
+        const dot = document.getElementById('serverStatus');
+        if (!dot) return;
+        // vnT is defined further down the page, so the labels are looked up when first needed
+        const keys = {
+            ok: 'Server running',
+            starting: 'Server starting',
+            stale: 'Scraper not responding',
+            update: 'Server running, an update is available',
+            down: 'Server unreachable'
+        };
+        function show(state) {
+            const label = vnT(keys[state] || keys.down);
+            dot.dataset.state = state;
+            dot.title = label;
+            dot.setAttribute('aria-label', label);
+        }
+        function poll() {
+            fetch('/api/status', {headers: {'X-Requested-With': 'fetch'}, cache: 'no-store'})
+                .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                .then(function (s) { show(s.scraper === 'ok' ? (s.update ? 'update' : 'ok') : s.scraper); })
+                .catch(function () { show('down'); });
+        }
+        document.addEventListener('DOMContentLoaded', function () { poll(); setInterval(poll, 30000); });
+    })();
+
+    // ---- password strength hint (advisory: the server applies the real rules)
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('input[data-pw-meter]').forEach(function (input) {
+            const min = parseInt(input.dataset.pwMeter, 10) || 15;
+            const bar = document.createElement('div');
+            bar.className = 'pw-meter';
+            bar.innerHTML = '<span class="pw-bar"><i></i></span><small></small>';
+            const host = input.closest('.ios-group, .mb-3, form') || input.parentNode;
+            const row = input.closest('label, .mb-3') || input;
+            row.parentNode.insertBefore(bar, row.nextSibling);
+            const fill = bar.querySelector('i');
+            const text = bar.querySelector('small');
+            function update() {
+                const value = input.value;
+                const length = Array.from(value).length;
+                let state, message;
+                if (!length) { bar.dataset.level = ''; fill.style.width = '0'; text.textContent = vnT('At least %(n)s characters', {n: min}); return; }
+                const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter(function (re) { return re.test(value); }).length;
+                const words = value.trim().split(/\s+/).length;
+                if (length < min) { state = 'weak'; message = vnT('%(n)s more characters needed', {n: min - length}); }
+                else if (length >= 20 || words >= 4 || classes >= 3) { state = 'strong'; message = vnT('Strong'); }
+                else { state = 'ok'; message = vnT('Acceptable: a few random words are stronger'); }
+                bar.dataset.level = state;
+                fill.style.width = Math.min(100, Math.round(length / (min + 8) * 100)) + '%';
+                text.textContent = message;
+            }
+            input.addEventListener('input', update);
+            update();
+        });
+    });
+
+    // ---- Web Push: notifications on this device (Android, and iOS/iPadOS 16.4+ once added to the Home Screen)
+    window.vnPush = (function () {
+        const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+        function b64ToBytes(b64) {
+            const pad = '='.repeat((4 - b64.length % 4) % 4);
+            const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+            return Uint8Array.from(raw, function (c) { return c.charCodeAt(0); });
+        }
+        function post(url, body) {
+            return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'fetch'}, body: JSON.stringify(body || {})})
+                .then(function (r) { return r.json().then(function (j) { j.httpStatus = r.status; return j; }); });
+        }
+        function registration() {
+            // "ready" never resolves when the worker could not be registered: give up after a few seconds
+            return Promise.race([
+                navigator.serviceWorker.ready,
+                new Promise(function (_, reject) { setTimeout(function () { reject(new Error('no service worker')); }, 4000); })
+            ]);
+        }
+        function current() {
+            if (!supported) return Promise.resolve(null);
+            return registration().then(function (reg) { return reg.pushManager.getSubscription(); });
+        }
+        function isIos() { return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+        function standalone() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+        function state() {
+            // Resolves to one of: unsupported, ios-install, denied, off, on
+            if (!supported) return Promise.resolve(isIos() && !standalone() ? 'ios-install' : 'unsupported');
+            if (Notification.permission === 'denied') return Promise.resolve('denied');
+            return current().then(function (sub) { return sub ? 'on' : 'off'; }, function () { return 'unsupported'; });
+        }
+        function enable() {
+            return Notification.requestPermission().then(function (permission) {
+                if (permission !== 'granted') throw new Error('denied');
+                return fetch('/api/push/key', {headers: {'X-Requested-With': 'fetch'}}).then(function (r) { return r.json(); });
+            }).then(function (data) {
+                return registration().then(function (reg) {
+                    return reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToBytes(data.key)});
+                });
+            }).then(function (sub) { return post('/api/push/subscribe', sub.toJSON()); });
+        }
+        function disable() {
+            return current().then(function (sub) {
+                if (!sub) return {status: 'success'};
+                const endpoint = sub.endpoint;
+                return sub.unsubscribe().then(function () { return post('/api/push/unsubscribe', {endpoint: endpoint}); });
+            });
+        }
+        return {supported: supported, state: state, enable: enable, disable: disable, test: function () { return post('/api/push/test'); }};
+    })();
+</script>
+
 <script>
     // Messages translated on the server, for scripts: vnT('English text', {name: value})
     const VN_I18N = {{ js_i18n|tojson }};

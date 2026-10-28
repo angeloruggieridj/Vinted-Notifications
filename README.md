@@ -216,6 +216,38 @@ everyone signs in.
   `X-Forwarded-*` headers when running behind a reverse proxy).
 - Serve the interface over HTTPS when it is reachable from the Internet.
 
+## 🔔 Push notifications
+
+Install the web app on your phone (Android: *Install app*; iPhone/iPad, iOS 16.4+: *Share → Add to Home Screen*), open
+**Settings → Notifications → Push notifications** and turn them on for that device. Then choose, for each query, whether it
+sends a push: the switch is in the form for adding a query and in the one for editing it. Browsers only allow push over
+HTTPS, so serve the interface through the bundled reverse proxy (below) or your own.
+
+## 🔒 HTTPS and security
+
+```bash
+echo "VN_DOMAIN=vinted.example.com" > .env
+docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d --build
+```
+
+[Caddy](https://caddyserver.com) obtains and renews a Let's Encrypt certificate and becomes the only public entry point
+(ports 80/443); the app's own ports then listen on `127.0.0.1` only.
+
+What the interface does for you:
+
+- **Passwords** follow NIST SP 800-63B rev. 4: at least 15 characters (passphrases welcome, any character allowed), refused
+  when too common, a simple pattern, containing the username or the app name, or found in known breaches (checked with the
+  Have I Been Pwned range API: only a 5-character hash prefix is sent; set `VN_PWNED_CHECK=0` to switch it off).
+- **Abuse limits**: per-address rate limits on pages, static files, sign-in/sign-up and sensitive actions, sign-in lockout,
+  request-size limit, and a production HTTP server (waitress) with bounded threads, connections and timeouts.
+- **Browser protections**: Content-Security-Policy, `frame-ancestors 'none'`, HSTS over HTTPS, SameSite cookies, a same-origin
+  check on every state-changing request (CSRF), escaped output, parameterised SQL, and Vinted-only scraper targets.
+- **Container**: read-only filesystem, all capabilities dropped except those the entrypoint needs, `no-new-privileges`, a
+  process limit and a health check (`/health`).
+
+The rate limiter counts per client address, so run it behind the proxy with `VN_TRUST_PROXY=1` (the Caddy file does).
+Put volumetric DDoS protection (your cloud firewall or a CDN) in front of anything that is public.
+
 ## ⚙️ Advanced Configuration
 
 ### Proxy Support
