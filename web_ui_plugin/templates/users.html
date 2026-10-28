@@ -102,6 +102,34 @@
                     <small class="text-muted">{{ _("Created") }} {{ user.created[:10] }} &middot; <span data-user-summary="{{ user.id }}">{{ _n("%(n)s query", "%(n)s queries", user.query_count) }} &middot; {{ _n("%(n)s item", "%(n)s items", user.item_count) }}</span></small>
                 </div>
 
+                <div class="ios-title">{{ _("Queries") }}</div>
+                {% if user.queries %}
+                <div class="ios-group">
+                    {% for q in user.queries %}
+                    <div class="ios-row">
+                        <span class="ios-label">{{ q.name }}{% if q.push %} <i class="bi bi-bell-fill text-muted small" title="{{ _('Push') }}"></i>{% endif %}
+                            <span class="ios-sub">{% if q.last_ts %}{{ _("Last found") }}: <time class="local-ts" data-rel="1" data-ts="{{ q.last_ts }}"></time>{% else %}{{ _("Never") }}{% endif %}</span></span>
+                        <span class="text-muted">{{ _n("%(n)s item", "%(n)s items", q.item_count) }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="ios-foot">{{ _("No queries yet") }}</p>
+                {% endif %}
+
+                {% if user.recent_items %}
+                <div class="ios-title">{{ _("Latest items") }}</div>
+                <div class="ios-group">
+                    {% for item in user.recent_items %}
+                    <div class="ios-row">
+                        <span class="ios-label">{{ item.title }}
+                            <span class="ios-sub">{{ item.query_name or '' }}{% if item.seller_login %} &middot; {{ item.seller_login }}{% endif %}{% if item.when %} &middot; {{ item.when }}{% endif %}</span></span>
+                        <span class="text-muted">{{ '%g'|format(item.price) }} {{ item.currency }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
                 <div class="ios-title">{{ _("Role") }}</div>
                 <form action="/users/{{ user.id }}/update" method="post" class="ios-group">
                     <input type="hidden" name="action" value="role">

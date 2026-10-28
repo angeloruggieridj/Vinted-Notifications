@@ -211,9 +211,19 @@ everyone signs in.
 - Administrators also manage the server-wide settings (refresh delay, proxies, RSS port...), the accounts and the logs.
   Identical searches from different accounts are fetched from Vinted only once.
 - Administrators create accounts from **Accounts**; they can also allow self-service sign-up in Configuration → Server.
-- Environment variables: `VN_WEB_PASSWORD` (single password before accounts exist; afterwards a recovery password that
-  signs in any administrator), `VN_COOKIE_SECURE=1` (serve cookies over HTTPS only) and `VN_TRUST_PROXY=1` (trust
-  `X-Forwarded-*` headers when running behind a reverse proxy).
+- Environment variables: `VN_WEB_PASSWORD` (the single password while accounts are off; it has no effect afterwards),
+  `VN_COOKIE_SECURE=1` (serve cookies over HTTPS only) and `VN_TRUST_PROXY=1` (trust `X-Forwarded-*` headers when
+  running behind a reverse proxy).
+- **Forgotten administrator password?** There is deliberately no master password. On the server, run:
+
+  ```bash
+  docker compose exec -u appuser vinted-notifications python reset_admin_password.py --generate
+  ```
+
+  (add `--user NAME` for another account, `--enable` to re-enable a disabled one; without `--generate` you type the
+  temporary password). It prints a one-time password, signs the account out everywhere and forces a new password at the
+  next sign-in. Only someone who can already run commands on the server can do this. Passwords an administrator sets for
+  a member are single-use in the same way.
 - Serve the interface over HTTPS when it is reachable from the Internet.
 
 ## 🔔 Push notifications

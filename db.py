@@ -821,6 +821,17 @@ def list_users():
     return [dict(row) for row in rows]
 
 
+def get_recent_items(user_id, limit=5):
+    """The newest items collected for an account, with the query they came from."""
+    rows = _fetchall(
+        "SELECT i.title, i.price, i.currency, i.timestamp, i.seller_login, q.query_name, q.query "
+        "FROM items i LEFT JOIN queries q ON q.id = i.query_id WHERE i.user_id=? "
+        "ORDER BY i.timestamp DESC LIMIT ?",
+        (user_id, limit),
+    )
+    return [dict(r) for r in rows]
+
+
 def create_user(username, password_hash, role="user"):
     """Returns the new user's id, or None if the name is taken."""
     import time

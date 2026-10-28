@@ -74,8 +74,8 @@ def accounts_enabled():
 
 
 def _env_password():
-    """VN_WEB_PASSWORD: the single password before accounts exist; an administrator
-    recovery password afterwards."""
+    """VN_WEB_PASSWORD: the single password while accounts are off. It has no effect once they
+    are on: a forgotten administrator password is reset with reset_admin_password.py."""
     return os.environ.get("VN_WEB_PASSWORD", "")
 
 
@@ -110,10 +110,6 @@ def _verify_user(username, password):
     user = db.get_user_by_name(username.strip())
     hash_to_check = user["password_hash"] if user else _DUMMY_HASH
     ok = check_password_hash(hash_to_check, password) and user is not None
-    if user and not ok and user["role"] == "admin":
-        # Recovery: the operator-set environment password signs in any administrator
-        env = _env_password()
-        ok = bool(env) and hmac.compare_digest(env.encode(), password.encode())
     if user and ok and not user["disabled"]:
         return user
     return None
@@ -374,6 +370,47 @@ def require_login():
     return redirect(url_for("login", next=request.full_path.rstrip("?")))
 
 
+# Endpoints an account can still reach while it has to choose a new password
+FORCED_CHANGE_ALLOWED = ("static", "logout", "force_password", "set_language_cookie", "manifest", "service_worker", "offline", "health", "login")
+
+
+def must_change_password(user):
+    return bool(user and user["id"] and db.get_user_setting(user["id"], "must_change_password") == "1")
+
+
+@app.before_request
+def force_password_change():
+    """A password set by someone else (an administrator, or the recovery script) is single-use."""
+    if request.endpoint in FORCED_CHANGE_ALLOWED or not accounts_enabled():
+        return None
+    if must_change_password(current_user()):
+        if request.headers.get("X-Requested-With") == "fetch":
+            return jsonify({"status": "error", "message": tr("Choose a new password first")}), 403
+        return redirect(url_for("force_password"))
+    return None
+
+
+@app.route("/account/new-password", methods=["GET", "POST"])
+def force_password():
+    user = current_user()
+    if not accounts_enabled() or user is None or not must_change_password(user):
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        new = request.form.get("new_password", "")
+        if check_password_hash(user["password_hash"], new):
+            error = tr("Choose a different password from the temporary one.")
+        else:
+            error = _password_problem(new, request.form.get("confirm_password", ""), user["username"])
+        if not error:
+            db.update_user(user["id"], password_hash=generate_password_hash(new))
+            db.set_user_setting(user["id"], "must_change_password", "0")
+            _sign_in(db.get_user(user["id"]))
+            flash(tr("Password saved. Other browsers have been logged out."), "success")
+            return redirect(url_for("index"))
+    return render_template("force_password.html", error=error, min_password_length=MIN_PASSWORD_LENGTH), (400 if error else 200)
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     multi = accounts_enabled()
@@ -565,6 +602,7 @@ def change_own_password():
         flash(problem, "danger")
     else:
         db.update_user(user["id"], password_hash=generate_password_hash(request.form["new_password"]))
+        db.set_user_setting(user["id"], "must_change_password", "0")
         _sign_in(db.get_user(user["id"]))
         flash(tr("Password saved. Other browsers have been logged out."), "success")
     return redirect(url_for("config", _anchor="security"))
@@ -593,6 +631,14 @@ def users():
     for row in rows:
         row["created"] = format_ts(row["created_at"])
         row["hue"] = sum(map(ord, row["username"])) * 7 % 360  # stable avatar colour
+        row["queries"] = [
+            {"name": _query_display(q[1], q[2]), "item_count": q[7], "last_ts": q[3], "push": bool(q[9])}
+            for q in db.get_queries_overview(row["id"])
+        ]
+        row["recent_items"] = [
+            {**item, "when": format_ts(item["timestamp"]) if item["timestamp"] else ""}
+            for item in db.get_recent_items(row["id"], 5)
+        ]
     return render_template("users.html", users=rows, allow_signup=db.get_parameter("allow_signup") == "True",
                            min_password_length=MIN_PASSWORD_LENGTH)
 
@@ -641,9 +687,13 @@ def update_user(user_id):
             flash(problem, "danger")
         else:
             db.update_user(user_id, password_hash=generate_password_hash(password))
-            flash(tr("Password reset. That account was signed out everywhere."), "success")
             if user_id == current_uid():
                 _sign_in(db.get_user(user_id))
+                flash(tr("Password reset. That account was signed out everywhere."), "success")
+            else:
+                # Known to the administrator, so the account must choose its own at the next sign-in
+                db.set_user_setting(user_id, "must_change_password", "1")
+                flash(tr("Password reset. That account was signed out everywhere and must choose a new password at its next sign-in."), "success")
     return redirect(url_for("users"))
 
 

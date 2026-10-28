@@ -6,6 +6,12 @@
 </div>
 {% endmacro %}
 
+{% macro server_status() %}
+<span class="srv-status" data-state="starting" role="status" aria-live="polite" title="{{ _('Server status') }}">
+    <i class="status-dot" aria-hidden="true"></i><span class="srv-label">{{ _("Server status") }}</span>
+</span>
+{% endmacro %}
+
 {% macro seller_info(item) -%}
 {%- if item.seller_login -%}
 <span class="seller-avatar">{{ item.seller_login[:1] }}</span>

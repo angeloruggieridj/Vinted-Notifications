@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import theme_switch %}
+{% from "_macros.html" import theme_switch, server_status %}
 
 {% block title %}{{ _("Configuration - Vinted Notifications") }}{% endblock %}
 
@@ -13,6 +13,10 @@
     <div class="ios-row">
         <span class="ios-label"><span class="row-ico" style="--c: #5856D6"><i class="bi bi-circle-half"></i></span>{{ _("Appearance") }}</span>
         {{ theme_switch() }}
+    </div>
+    <div class="ios-row">
+        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-hdd-network-fill"></i></span>{{ _("Server") }}</span>
+        {{ server_status() }}
     </div>
     <a href="/allowlist" class="ios-row ios-link"><span class="ios-label"><span class="row-ico" style="--c: #007AFF"><i class="bi bi-globe2"></i></span>{{ _("Allowlist") }}</span><i class="bi bi-chevron-right chev"></i></a>
     {% if is_admin and accounts_enabled %}<a href="/users" class="ios-row ios-link"><span class="ios-label"><span class="row-ico" style="--c: #FF9500"><i class="bi bi-people-fill"></i></span>{{ _("Accounts") }}</span><i class="bi bi-chevron-right chev"></i></a>{% endif %}
@@ -266,7 +270,7 @@
                 <div class="ios-row stack ios-notes">
                     <ul class="mb-0">
                         <li>{{ _("Five wrong attempts lock the login for a minute.") }}</li>
-                        <li>{{ _("Forgot it? Start the container with") }} <code>VN_WEB_PASSWORD=your-new-password</code>{{ _(" and sign in as an administrator with it, then set a new password here.") }}</li>
+                        <li>{{ _("Forgot an administrator password? Run this on the server; the account gets a one-time password and must choose a new one at its next sign-in:") }} <code>docker compose exec -u appuser vinted-notifications python reset_admin_password.py --generate</code></li>
                         <li>{{ _("Serve the interface over HTTPS (for example behind a reverse proxy) if you reach it from outside your home network.") }}</li>
                     </ul>
                 </div>

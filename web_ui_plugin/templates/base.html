@@ -1,4 +1,4 @@
-{% from "_macros.html" import theme_switch %}<!DOCTYPE html>
+{% from "_macros.html" import theme_switch, server_status %}<!DOCTYPE html>
 <html lang="{{ lang }}">
 <head>
     <meta charset="UTF-8">
@@ -39,7 +39,7 @@
         {% if is_admin and accounts_enabled %}<a class="side-link {% if path.startswith('/users') %}active{% endif %}" href="/users"><i class="bi bi-people"></i> {{ _("Accounts") }}</a>{% endif %}
         {% if is_admin %}<a class="side-link {% if path == '/logs' %}active{% endif %}" href="/logs"><i class="bi bi-terminal"></i> {{ _("Logs") }}</a>{% endif %}
     </nav>
-    <div class="sidebar-theme">{{ theme_switch() }}</div>
+    <div class="sidebar-theme">{{ server_status() }}{{ theme_switch() }}</div>
     <div class="sidebar-foot">
         <a class="side-account" href="/config#security" title="{{ _('Account') if accounts_enabled else _('Security') }}">
             <span class="avatar">{{ (current_user.username[:1] if current_user and current_user.username else 'V')|upper }}</span>
@@ -63,10 +63,6 @@
         {% block content %}{% endblock %}
     </main>
 
-    <footer class="page-foot">
-        <span class="status-dot" id="serverStatus" data-state="ok" role="status" tabindex="0"
-              aria-label="{{ _('Server status') }}" title="{{ _('Server status') }}"></span>
-    </footer>
 </div>
 
 <!-- Scroll edge effects: keep the status bar and the tab bar legible over scrolling content -->
@@ -124,23 +120,25 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // ---- server status dot: green when the scraper is running, amber when it is late or an update is waiting, red when unreachable
+    // ---- server status: running / starting / scraper late / update available / unreachable
     (function () {
-        const dot = document.getElementById('serverStatus');
-        if (!dot) return;
-        // vnT is defined further down the page, so the labels are looked up when first needed
-        const keys = {
-            ok: 'Server running',
-            starting: 'Server starting',
-            stale: 'Scraper not responding',
-            update: 'Server running, an update is available',
-            down: 'Server unreachable'
+        const indicators = document.querySelectorAll('.srv-status');
+        if (!indicators.length) return;
+        // vnT is defined further down the page, so the texts are looked up when first needed
+        const texts = {
+            ok: ['Server online', 'The server and the scraper are running'],
+            starting: ['Server starting', 'The scraper has not completed its first scan yet'],
+            stale: ['Scraper not responding', 'No scan has finished recently: check the logs'],
+            update: ['Update available', 'The server is running, a newer version is available'],
+            down: ['Server unreachable', 'This page cannot reach the server']
         };
         function show(state) {
-            const label = vnT(keys[state] || keys.down);
-            dot.dataset.state = state;
-            dot.title = label;
-            dot.setAttribute('aria-label', label);
+            const text = texts[state] || texts.down;
+            indicators.forEach(function (el) {
+                el.dataset.state = state;
+                el.querySelector('.srv-label').textContent = vnT(text[0]);
+                el.title = vnT(text[1]);
+            });
         }
         function poll() {
             fetch('/api/status', {headers: {'X-Requested-With': 'fetch'}, cache: 'no-store'})
