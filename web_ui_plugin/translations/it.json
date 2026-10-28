@@ -474,5 +474,12 @@
   "The server and the scraper are running": "Il server e lo scraper sono in funzione",
   "The server is running, a newer version is available": "Il server è in funzione, è disponibile una versione più recente",
   "This page cannot reach the server": "Questa pagina non riesce a raggiungere il server",
-  "Update available": "Aggiornamento disponibile"
+  "Update available": "Aggiornamento disponibile",
+  "Permission: %(p)s": "Permesso: %(p)s",
+  "Installed app: %(v)s": "App installata: %(v)s",
+  "Service worker: %(w)s": "Service worker: %(w)s",
+  "yes": "sì",
+  "no": "no",
+  "Could not turn on notifications: %(e)s": "Impossibile attivare le notifiche: %(e)s",
+  "Notifications are now on for this device.": "Le notifiche sono ora attive su questo dispositivo."
 }

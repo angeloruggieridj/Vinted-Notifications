@@ -105,7 +105,8 @@
                 <div class="ios-group" id="pushGroup">
                     <div class="ios-row">
                         <span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-bell-fill"></i></span>{{ _("This device") }}
-                            <span class="ios-sub" id="pushStatus">{{ _("Checking...") }}</span></span>
+                            <span class="ios-sub" id="pushStatus">{{ _("Checking...") }}</span>
+                            <span class="ios-sub" id="pushDiag"></span></span>
                         <button type="button" class="btn btn-sm btn-primary" id="pushToggle" hidden></button>
                     </div>
                     <button type="button" class="ios-row ios-button" id="pushTest" hidden><span class="ios-label">{{ _("Send a test notification") }}</span></button>
@@ -476,6 +477,7 @@
             const toggle = document.getElementById('pushToggle');
             const test = document.getElementById('pushTest');
             const devices = document.getElementById('pushDevices');
+            let lastError = '';
             if (!status || !window.vnPush) return;
             const texts = {
                 unsupported: vnT('This browser cannot receive push notifications.'),
@@ -486,7 +488,7 @@
             };
             function refresh() {
                 vnPush.state().then(function (state) {
-                    status.textContent = texts[state];
+                    status.textContent = lastError || texts[state];
                     toggle.hidden = !(state === 'off' || state === 'on');
                     toggle.textContent = state === 'on' ? vnT('Turn off') : vnT('Turn on');
                     toggle.className = 'btn btn-sm ' + (state === 'on' ? 'btn-outline-secondary' : 'btn-primary');
@@ -494,18 +496,41 @@
                     test.hidden = state !== 'on';
                 });
             }
-            toggle.addEventListener('click', function () {
+            const diag = document.getElementById('pushDiag');
+            function showDiagnosis() {
+                vnPush.diagnose().then(function (d) {
+                    diag.textContent = vnT('Permission: %(p)s', {p: d.permission}) + ' · ' + vnT('Installed app: %(v)s', {v: d.installed ? vnT('yes') : vnT('no')}) + ' · ' + vnT('Service worker: %(w)s', {w: d.worker});
+                });
+            }
+            toggle.addEventListener('click', function (event) {
+                event.preventDefault();
+                const turningOn = toggle.dataset.state !== 'on';
+                // The permission prompt has to be requested synchronously inside this tap, so nothing precedes this call
+                let action;
+                try {
+                    action = turningOn ? vnPush.enable() : vnPush.disable();
+                } catch (e) {
+                    action = Promise.reject(e);
+                }
                 toggle.disabled = true;
-                (toggle.dataset.state === 'on' ? vnPush.disable() : vnPush.enable())
-                    .then(function (result) { if (result && result.devices !== undefined) devices.textContent = result.devices; })
-                    .catch(function () { status.textContent = texts.denied; })
-                    .then(function () { toggle.disabled = false; refresh(); });
+                action
+                    .then(function (result) { lastError = ''; if (result && result.devices !== undefined) devices.textContent = result.devices; })
+                    .catch(function (e) {
+                        // Say what actually went wrong instead of guessing "blocked"
+                        lastError = (e && e.code === 'denied') ? '' : vnT('Could not turn on notifications: %(e)s', {e: (e && e.message) || e});
+                    })
+                    .then(function () {
+                        toggle.disabled = false;
+                        showDiagnosis();
+                        refresh();
+                    });
             });
             test.addEventListener('click', function () {
                 test.disabled = true;
                 vnPush.test().then(function (r) { status.textContent = r.message || ''; }).catch(function () {}).then(function () { test.disabled = false; });
             });
             refresh();
+            showDiagnosis();
         })();
     </script>
 {% endblock %}

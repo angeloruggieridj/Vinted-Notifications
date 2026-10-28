@@ -193,10 +193,14 @@
                 .then(function (r) { return r.json().then(function (j) { j.httpStatus = r.status; return j; }); });
         }
         function registration() {
-            // "ready" never resolves when the worker could not be registered: give up after a few seconds
+            // Make sure a worker is registered (the page does it on load, but iOS can be slow), then wait for it to be
+            // active. "ready" never resolves when registration failed, so give up after a while.
+            const registered = navigator.serviceWorker.getRegistration('/').then(function (reg) {
+                return reg || navigator.serviceWorker.register('/sw.js', {scope: '/'});
+            });
             return Promise.race([
-                navigator.serviceWorker.ready,
-                new Promise(function (_, reject) { setTimeout(function () { reject(new Error('no service worker')); }, 4000); })
+                registered.then(function () { return navigator.serviceWorker.ready; }),
+                new Promise(function (_, reject) { setTimeout(function () { reject(new Error('The service worker did not start')); }, 10000); })
             ]);
         }
         function current() {
@@ -212,14 +216,44 @@
             return current().then(function (sub) { return sub ? 'on' : 'off'; }, function () { return 'unsupported'; });
         }
         function enable() {
-            return Notification.requestPermission().then(function (permission) {
-                if (permission !== 'granted') throw new Error('denied');
-                return fetch('/api/push/key', {headers: {'X-Requested-With': 'fetch'}}).then(function (r) { return r.json(); });
+            // iOS only shows the permission prompt when this is called straight from a tap: ask first, before any
+            // other asynchronous work, and call it exactly once.
+            let asked;
+            try {
+                asked = Notification.requestPermission();
+            } catch (e) {
+                return Promise.reject(e);
+            }
+            return Promise.resolve(asked).then(function (permission) {
+                if (permission !== 'granted') { const e = new Error('Permission ' + permission); e.code = 'denied'; throw e; }
+                return fetch('/api/push/key', {headers: {'X-Requested-With': 'fetch'}}).then(function (r) {
+                    if (!r.ok) throw new Error('Key request failed (' + r.status + ')');
+                    return r.json();
+                });
             }).then(function (data) {
                 return registration().then(function (reg) {
                     return reg.pushManager.subscribe({userVisibleOnly: true, applicationServerKey: b64ToBytes(data.key)});
                 });
-            }).then(function (sub) { return post('/api/push/subscribe', sub.toJSON()); });
+            }).then(function (sub) {
+                return post('/api/push/subscribe', sub.toJSON()).then(function (result) {
+                    if (result.status !== 'success') throw new Error(result.message || 'The server refused the subscription');
+                    return result;
+                });
+            });
+        }
+        // What this device can do, for the settings page (and for bug reports)
+        function diagnose() {
+            return navigator.serviceWorker.getRegistration('/').then(function (reg) {
+                const worker = reg && (reg.active || reg.waiting || reg.installing);
+                return {
+                    installed: standalone(),
+                    ios: isIos(),
+                    permission: ('Notification' in window) ? Notification.permission : 'n/a',
+                    pushManager: 'PushManager' in window,
+                    worker: worker ? worker.state : 'none',
+                    secure: window.isSecureContext
+                };
+            }).catch(function () { return {installed: standalone(), ios: isIos(), permission: 'n/a', pushManager: 'PushManager' in window, worker: 'n/a', secure: window.isSecureContext}; });
         }
         function disable() {
             return current().then(function (sub) {
@@ -228,7 +262,7 @@
                 return sub.unsubscribe().then(function () { return post('/api/push/unsubscribe', {endpoint: endpoint}); });
             });
         }
-        return {supported: supported, state: state, enable: enable, disable: disable, test: function () { return post('/api/push/test'); }};
+        return {supported: supported, state: state, enable: enable, disable: disable, diagnose: diagnose, test: function () { return post('/api/push/test'); }};
     })();
 </script>
 

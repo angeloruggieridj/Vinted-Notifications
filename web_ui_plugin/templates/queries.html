@@ -171,3 +171,34 @@
 </div>
 {% endif %}
 {% endblock %}
+
+{% block scripts %}
+<script>
+    // Choosing push for a query only works on devices that agreed to receive it: ask right away.
+    // The permission prompt has to come straight from the tap, so it is requested before anything else happens.
+    document.addEventListener('click', function (event) {
+        const input = event.target.closest && event.target.closest('input[name="push"]');
+        if (!input || !input.checked || !window.vnPush) return;
+        const holder = input.closest('.form-check');
+        let hint = holder.querySelector('.push-hint');
+        if (!hint) {
+            hint = document.createElement('div');
+            hint.className = 'form-text push-hint';
+            holder.appendChild(hint);
+        }
+        function say(text) { hint.textContent = text; }
+        if (!vnPush.supported) {
+            vnPush.state().then(function (state) {
+                say(state === 'ios-install' ? vnT('Add the app to the Home Screen to receive notifications on this iPhone or iPad.') : vnT('This browser cannot receive push notifications.'));
+            });
+            return;
+        }
+        if (Notification.permission === 'denied') { say(vnT('Blocked in the browser settings for this site.')); return; }
+        // 'default' shows the system prompt; 'granted' just makes sure this device is registered
+        vnPush.enable().then(function () { say(vnT('Notifications are now on for this device.')); })
+            .catch(function (e) {
+                say((e && e.code === 'denied') ? vnT('Blocked in the browser settings for this site.') : vnT('Could not turn on notifications: %(e)s', {e: (e && e.message) || e}));
+            });
+    });
+</script>
+{% endblock %}
