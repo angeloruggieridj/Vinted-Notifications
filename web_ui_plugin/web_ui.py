@@ -247,7 +247,8 @@ app.config.update(
     # Nothing in this interface uploads files: refuse oversized bodies before they are read
     MAX_CONTENT_LENGTH=256 * 1024,
 )
-if os.environ.get("VN_TRUST_PROXY", "") not in ("", "0", "false"):
+TRUST_PROXY = os.environ.get("VN_TRUST_PROXY", "") not in ("", "0", "false")
+if TRUST_PROXY:
     # Behind a reverse proxy: trust its X-Forwarded-* headers (client IP, scheme, host)
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
@@ -1439,8 +1440,7 @@ def web_ui_process():
         # time, which the development server does not
         from waitress import serve
 
-        serve(
-            app,
+        options = dict(
             host="0.0.0.0",
             port=8000,
             threads=8,
@@ -1449,6 +1449,14 @@ def web_ui_process():
             max_request_body_size=256 * 1024,
             ident="vinted-notifications",
         )
+        if TRUST_PROXY:
+            # waitress drops X-Forwarded-* unless told which proxy to believe. The operator
+            # declared one (VN_TRUST_PROXY) and the app is only reachable through it.
+            options.update(
+                trusted_proxy="*",
+                trusted_proxy_headers={"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-port"},
+            )
+        serve(app, **options)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Web UI process stopped")
     except Exception as e:
