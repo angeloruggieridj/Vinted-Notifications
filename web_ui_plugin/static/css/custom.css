@@ -136,7 +136,13 @@
 }
 
 *, *::before, *::after { -webkit-tap-highlight-color: transparent; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; touch-action: manipulation; overscroll-behavior-y: none; }
+/* Behave like an installed app: no double-tap zoom, no long-press callouts or text selection on the chrome */
+body { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+a, button, .btn, label, summary, [role="button"], .nav, .tab-bar, .sidebar { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+input, textarea, select, .selectable, .item-title, code, pre { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+/* 16px fields: iOS zooms into smaller ones when they take focus */
+@media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em); } }
 body { background: var(--bg); color: var(--label); font-family: var(--font); letter-spacing: -.011em; -webkit-font-smoothing: antialiased; font-feature-settings: "tnum" 1; }
 body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--backdrop-1); pointer-events: none; }
 h1, h2, h3, h4, h5, h6 { color: var(--label); letter-spacing: -.02em; }
