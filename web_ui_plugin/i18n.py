@@ -42,6 +42,8 @@ JS_MESSAGES = (
     "Show",
     "Dismiss",
     "Install app",
+    "A push reached this device and its notification was shown.",
+    "A push reached this device.",
     "Notifications are now on for this device.",
     "Could not turn on notifications: %(e)s",
     "no",

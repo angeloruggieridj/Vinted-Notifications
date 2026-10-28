@@ -262,7 +262,7 @@
                 return sub.unsubscribe().then(function () { return post('/api/push/unsubscribe', {endpoint: endpoint}); });
             });
         }
-        return {supported: supported, state: state, enable: enable, disable: disable, diagnose: diagnose, test: function () { return post('/api/push/test'); }};
+        return {supported: supported, state: state, enable: enable, disable: disable, diagnose: diagnose, test: function (delay) { return post('/api/push/test', {delay: delay || 0}); }};
     })();
 </script>
 

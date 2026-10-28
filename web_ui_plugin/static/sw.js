@@ -3,7 +3,7 @@
  * It deliberately caches no pages and no API responses: listings and settings always come
  * from the server (and may sit behind a login). Only static assets are cached.
  */
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL_CACHE = 'vn-shell-' + VERSION;
 const ASSET_CACHE = 'vn-assets-' + VERSION;
 const PRECACHE = ['/offline', '/static/css/custom.css', '/static/icons/icon-192.png'];
@@ -66,6 +66,7 @@ self.addEventListener('fetch', function (event) {
 
 // ---- Web Push: a new listing arrived for a query that has notifications switched on
 self.addEventListener('push', function (event) {
+    tellPages({type: 'push-received'});
     let data = {};
     try { data = event.data ? event.data.json() : {}; } catch (e) { data = {title: event.data ? event.data.text() : ''}; }
     const options = {
@@ -76,8 +77,21 @@ self.addEventListener('push', function (event) {
         data: {url: data.url || '/items'}
     };
     if (data.image && /^https:/.test(data.image)) options.image = data.image;
-    event.waitUntil(self.registration.showNotification(data.title || 'Vinted Notifications', options));
+    const title = data.title || 'Vinted Notifications';
+    event.waitUntil(
+        self.registration.showNotification(title, options)
+            // Whatever goes wrong with the extras, a push must always end in a visible notification
+            .catch(function () { return self.registration.showNotification(title, {body: options.body, data: options.data}); })
+            .then(function () { return tellPages({type: 'push-shown', title: title}); })
+    );
 });
+
+// Open pages learn that the push reached this device (the settings page shows it)
+function tellPages(message) {
+    return self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(function (windows) {
+        windows.forEach(function (client) { client.postMessage(message); });
+    });
+}
 
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();

@@ -75,7 +75,7 @@ def _send_one(sub, payload):
     from pywebpush import WebPushException, webpush
 
     try:
-        webpush(
+        response = webpush(
             subscription_info={"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}},
             data=json.dumps(payload),
             vapid_private_key=_vapid(),
@@ -83,6 +83,8 @@ def _send_one(sub, payload):
             ttl=TTL_SECONDS,
             timeout=10,
         )
+        host = sub["endpoint"].split("/")[2] if sub["endpoint"].count("/") >= 2 else "?"
+        logger.info(f"Push accepted by {host} (HTTP {getattr(response, 'status_code', '?')})")
         return True
     except WebPushException as e:
         status = getattr(e.response, "status_code", None)
@@ -103,6 +105,23 @@ def send_to_user(user_id, payload):
         return 0
     with ThreadPoolExecutor(max_workers=min(4, len(subs))) as pool:
         return sum(1 for ok in pool.map(lambda s: _send_one(s, payload), subs) if ok)
+
+
+def schedule_send(user_id, payload, delay):
+    """Send after `delay` seconds without holding up the caller (used by the settings page's test button,
+    so there is time to leave the app: iOS does not show a banner for the app that is on screen)."""
+    import threading
+
+    def run():
+        try:
+            sent = send_to_user(user_id, payload)
+            logger.info(f"Delayed push for account {user_id}: {sent} device(s) accepted it")
+        except Exception as e:
+            logger.error(f"Delayed push failed: {e}", exc_info=True)
+
+    timer = threading.Timer(max(0, delay), run)
+    timer.daemon = True
+    timer.start()
 
 
 def item_payload(title, price, url, image=None, query_name=None):

@@ -345,7 +345,9 @@ def security_headers(response):
     headers.setdefault("Referrer-Policy", "same-origin")
     headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
     headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
-    headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    # Pages stay same-origin; the public static files (icons, styles) must be fetchable by the OS when it
+    # draws a notification, which does not happen from inside the page
+    headers.setdefault("Cross-Origin-Resource-Policy", "cross-origin" if request.endpoint == "static" else "same-origin")
     if response.mimetype in ("text/html", "application/manifest+json"):
         headers.setdefault("Content-Security-Policy", CSP)
     if request.is_secure:
@@ -1414,11 +1416,19 @@ def api_push_unsubscribe():
 
 @app.route("/api/push/test", methods=["POST"])
 def api_push_test():
-    sent = push.send_to_user(
-        current_uid(),
-        push.item_payload(tr("Notifications are on"), tr("You will get a message like this for every new item."), url_for("items")),
-    )
-    if sent:
+    uid = current_uid()
+    payload = push.item_payload(tr("Notifications are on"), tr("You will get a message like this for every new item."), url_for("items"))
+    try:
+        delay = min(max(int((request.get_json(silent=True) or {}).get("delay", 0)), 0), 20)
+    except (TypeError, ValueError):
+        delay = 0
+    if not db.get_push_subscriptions(uid):
+        return jsonify({"status": "error", "message": tr("No device accepted the notification. Turn notifications on from this device first.")}), 502
+    if delay:
+        # Answer at once and send later: the page never waits on the push service
+        push.schedule_send(uid, payload, delay)
+        return jsonify({"status": "success", "delay": delay, "message": tr("Notification on its way in %(n)s seconds: leave the app or lock the screen to see it.", n=delay)})
+    if push.send_to_user(uid, payload):
         return jsonify({"status": "success", "message": tr("Test notification sent")})
     return jsonify({"status": "error", "message": tr("No device accepted the notification. Turn notifications on from this device first.")}), 502
 

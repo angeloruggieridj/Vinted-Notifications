@@ -106,7 +106,8 @@
                     <div class="ios-row">
                         <span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-bell-fill"></i></span>{{ _("This device") }}
                             <span class="ios-sub" id="pushStatus">{{ _("Checking...") }}</span>
-                            <span class="ios-sub" id="pushDiag"></span></span>
+                            <span class="ios-sub" id="pushDiag"></span>
+                            <span class="ios-sub" id="pushReceived" aria-live="polite"></span></span>
                         <button type="button" class="btn btn-sm btn-primary" id="pushToggle" hidden></button>
                     </div>
                     <button type="button" class="ios-row ios-button" id="pushTest" hidden><span class="ios-label">{{ _("Send a test notification") }}</span></button>
@@ -525,9 +526,24 @@
                         refresh();
                     });
             });
-            test.addEventListener('click', function () {
+            const received = document.getElementById('pushReceived');
+            // The service worker reports back when a push reaches this device
+            if (navigator.serviceWorker) {
+                navigator.serviceWorker.addEventListener('message', function (event) {
+                    const type = event.data && event.data.type;
+                    if (type === 'push-received') received.textContent = vnT('A push reached this device.');
+                    if (type === 'push-shown') received.textContent = vnT('A push reached this device and its notification was shown.');
+                });
+            }
+            test.addEventListener('click', function (event) {
+                event.preventDefault();
                 test.disabled = true;
-                vnPush.test().then(function (r) { status.textContent = r.message || ''; }).catch(function () {}).then(function () { test.disabled = false; });
+                received.textContent = '';
+                // Sent a few seconds later so there is time to leave the app: iOS shows no banner for the app on screen
+                vnPush.test(8)
+                    .then(function (r) { received.textContent = r.message || ''; })
+                    .catch(function (e) { received.textContent = vnT('Could not turn on notifications: %(e)s', {e: (e && e.message) || e}); })
+                    .then(function () { test.disabled = false; });
             });
             refresh();
             showDiagnosis();

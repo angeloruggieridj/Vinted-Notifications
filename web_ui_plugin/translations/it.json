@@ -481,5 +481,8 @@
   "yes": "sì",
   "no": "no",
   "Could not turn on notifications: %(e)s": "Impossibile attivare le notifiche: %(e)s",
-  "Notifications are now on for this device.": "Le notifiche sono ora attive su questo dispositivo."
+  "Notifications are now on for this device.": "Le notifiche sono ora attive su questo dispositivo.",
+  "A push reached this device.": "Una notifica push è arrivata a questo dispositivo.",
+  "A push reached this device and its notification was shown.": "Una notifica push è arrivata a questo dispositivo ed è stata mostrata.",
+  "Notification on its way in %(n)s seconds: leave the app or lock the screen to see it.": "Notifica in arrivo tra %(n)s secondi: esci dall'app o blocca lo schermo per vederla."
 }
