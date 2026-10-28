@@ -23,7 +23,7 @@
     </a>
     <div class="kpi" title="{{ _('Daily average') }}">
         <span class="kpi-label"><i class="bi bi-graph-up"></i> {{ _("Items per day") }}</span>
-        <strong class="kpi-value">{{ stats.items_per_day }}</strong>
+        <strong class="kpi-value">{{ stats.items_per_day|round|int }}</strong>
     </div>
 </div>
 

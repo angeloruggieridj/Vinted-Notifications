@@ -1232,14 +1232,6 @@ def api_item_check(item_id):
     return jsonify({"status": status, "removed": removed})
 
 
-@app.route("/api/items/cleanup", methods=["GET", "POST"])
-def api_items_cleanup():
-    """Settings > "Check now": verify the account's stored items in the background."""
-    uid = current_uid()
-    if request.method == "POST":
-        availability.start_manual(uid)
-    return jsonify(availability.manual_state(uid))
-
 
 def _seller_reliability(item):
     """(level, percent) for the seller summary: from Vinted's 0-5 stars, tempered by how few reviews back them."""
@@ -1313,8 +1305,6 @@ def update_config():
     db.set_user_setting(uid, "banwords", form.get("banwords", ""))
     db.set_user_setting(uid, "items_autorefresh", str("items_autorefresh" in form))
     db.set_user_setting(uid, "new_items_notice", str("new_items_notice" in form))
-    interval = form.get("cleanup_interval", "0")
-    db.set_user_setting(uid, "cleanup_interval", interval if interval in availability.INTERVALS else "0")
     timezone = form.get("timezone", "").strip()
     try:
         if timezone:

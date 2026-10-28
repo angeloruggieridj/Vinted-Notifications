@@ -774,7 +774,6 @@ USER_SETTING_KEYS = (
     "telegram_chat_id",
     "rss_enabled",
     "feed_token",
-    "cleanup_interval",
 )
 
 
@@ -920,11 +919,9 @@ def items_due_for_check(user_id, checked_before, limit):
     return out
 
 
-def users_with_cleanup():
-    """Accounts that turned automatic cleanup of sold/removed items on."""
-    rows = _fetchall(
-        "SELECT DISTINCT user_id FROM user_settings WHERE key='cleanup_interval' AND value NOT IN ('', '0')"
-    )
+def users_with_items():
+    """Accounts that have collected items (the ones whose listings are verified in the background)."""
+    rows = _fetchall("SELECT DISTINCT user_id FROM items")
     return [r["user_id"] for r in rows]
 
 

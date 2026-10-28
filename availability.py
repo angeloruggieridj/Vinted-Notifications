@@ -7,8 +7,8 @@ Vinted has no public "is this item still there" endpoint, so the listing's own w
 Anything unclear (rate limits, bot checks, a page without that data) is "unknown" and never deletes anything.
 A "sold" verdict has to be seen twice, on two different checks, before the item is dropped.
 
-Checks are paced (a pause between requests, a small batch per run, and each item is looked at no more often than
-the account's chosen interval), so the cleanup stays light on Vinted. Opening an item in the app checks that one
+Checks run on their own for every account and are paced (a pause between requests, a small batch every 15 minutes,
+and each item is looked at no more often than every CHECK_EVERY hours), so the cleanup stays light on Vinted. Opening an item in the app checks that one
 item once (cached for ten minutes), which is the closest thing to real time without polling.
 """
 
@@ -29,11 +29,10 @@ AVAILABLE, REMOVED, SOLD, UNKNOWN = "available", "removed", "sold", "unknown"
 HOST = re.compile(r"^(?:[a-z0-9-]+\.)*vinted\.[a-z]{2,}(?:\.[a-z]{2})?$", re.IGNORECASE)
 RECENT = 600  # seconds during which an item that was just checked is not asked about again
 MAX_BYTES = 2_000_000
-INTERVALS = ("0", "1", "6", "24")  # hours between checks of the same item; 0 = never
+CHECK_EVERY = 6  # hours between two checks of the same item
 
 _requesters = {}
 _lock = threading.Lock()
-_manual = {}  # account -> progress of the "check now" button
 
 
 def _requester(host):
@@ -140,17 +139,14 @@ def cleanup_user(user_id, min_age, batch):
 
 
 def sweep(batch=20):
-    """Scheduled job: every account that chose an interval gets a small batch of due items checked."""
-    for user_id in db.users_with_cleanup():
+    """Scheduled job: every account gets a small batch of due items checked."""
+    for user_id in db.users_with_items():
         try:
-            hours = int(db.get_user_setting(user_id, "cleanup_interval") or 0)
-            if hours <= 0:
-                continue
-            checked, removed = cleanup_user(user_id, hours * 3600, batch)
+            checked, removed = cleanup_user(user_id, CHECK_EVERY * 3600, batch)
             if checked:
-                logger.info(f"Cleanup for account {user_id}: checked {checked}, removed {removed}")
+                logger.info(f"Availability check for account {user_id}: checked {checked}, removed {removed}")
         except Exception as e:
-            logger.error(f"Cleanup for account {user_id} failed: {e}", exc_info=True)
+            logger.error(f"Availability check for account {user_id} failed: {e}", exc_info=True)
 
 
 def check_one(user_id, item_id):
@@ -162,40 +158,10 @@ def check_one(user_id, item_id):
     if row["checked_at"] and time.time() - row["checked_at"] < RECENT:
         return (SOLD if row["available"] == 0 else AVAILABLE if row["available"] == 1 else UNKNOWN), False
     status = check(row["item"], row["base_url"])
-    auto = int(db.get_user_setting(user_id, "cleanup_interval") or 0) > 0
-    # Opening an item never deletes it on a first "sold" sighting; a missing listing goes only if cleanup is on
+    # Opening an item never deletes it on a first "sold" sighting; a listing that no longer exists goes at once
     removed = False
-    if status == REMOVED and auto:
+    if status == REMOVED:
         removed = apply(user_id, row, status)
     elif status != REMOVED:
         apply(user_id, row, status, delete_sold=False)
     return status, removed
-
-
-def start_manual(user_id, batch=60):
-    """"Check now": runs in the background; progress is read with manual_state()."""
-    state = _manual.get(user_id)
-    if state and state["running"]:
-        return False
-    _manual[user_id] = {"running": True, "checked": 0, "removed": 0, "started": time.time()}
-
-    def run():
-        state = _manual[user_id]
-        try:
-            for row in db.items_due_for_check(user_id, int(time.time()) - RECENT, batch):
-                status = check(row["item"], row["base_url"])
-                if apply(user_id, row, status):
-                    state["removed"] += 1
-                state["checked"] += 1
-                time.sleep(random.uniform(0.8, 1.6))
-        except Exception as e:
-            logger.error(f"Manual cleanup failed: {e}", exc_info=True)
-        finally:
-            state["running"] = False
-
-    threading.Thread(target=run, daemon=True).start()
-    return True
-
-
-def manual_state(user_id):
-    return _manual.get(user_id) or {"running": False, "checked": 0, "removed": 0}

@@ -67,50 +67,6 @@
                     </div>
                 </div>
 
-                <div class="ios-title">{{ _("Stored items") }}</div>
-                <div class="ios-group">
-                    {% set cleanup = us.cleanup_interval or '0' %}
-                    <div class="ios-row stack">
-                        <span class="ios-label" id="cleanupLabel">{{ _("Remove sold and removed items") }}<span class="ios-sub">{{ _("Checks the saved listings on Vinted and drops the ones that are gone.") }}</span></span>
-                        <div class="segmented seg-full" role="radiogroup" aria-labelledby="cleanupLabel">
-                            {% for value, label in (('0', _("Off")), ('1', _("Every hour")), ('6', _("Every 6 hours")), ('24', _("Every day"))) %}
-                            <label class="seg {% if cleanup == value %}active{% endif %}"><input type="radio" name="cleanup_interval" value="{{ value }}" {% if cleanup == value %}checked{% endif %}><span>{{ label }}</span></label>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    <button type="button" class="ios-row ios-link ios-btn-row" id="cleanupNow">
-                        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-arrow-repeat"></i></span>{{ _("Check now") }}</span>
-                        <span class="ios-value" id="cleanupStatus" aria-live="polite"></span>
-                    </button>
-                </div>
-                <p class="ios-foot">{{ _("Each item is looked at once per interval, a few at a time and with pauses, so Vinted is not overloaded. A sold item has to be seen sold twice before it goes. Opening an item also checks it.") }}</p>
-                <script>
-                    (function () {
-                        document.querySelectorAll('input[name="cleanup_interval"]').forEach(function (radio) {
-                            radio.addEventListener('change', function () {
-                                document.querySelectorAll('input[name="cleanup_interval"]').forEach(function (r) { r.closest('.seg').classList.toggle('active', r.checked); });
-                            });
-                        });
-                        const button = document.getElementById('cleanupNow');
-                        const status = document.getElementById('cleanupStatus');
-                        function show(state) {
-                            if (state.running) status.textContent = vnT('Checking...') + ' ' + state.checked;
-                            else if (state.checked) status.textContent = vnT('Checked %(c)s items, removed %(r)s', {c: state.checked, r: state.removed});
-                        }
-                        function poll() {
-                            fetch('/api/items/cleanup', {headers: {'X-Requested-With': 'fetch'}, credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (state) {
-                                show(state);
-                                if (state.running) setTimeout(poll, 2000); else button.disabled = false;
-                            });
-                        }
-                        button.addEventListener('click', function () {
-                            button.disabled = true;
-                            status.textContent = vnT('Checking...');
-                            vnPost('/api/items/cleanup').then(function () { setTimeout(poll, 1500); });
-                        });
-                    })();
-                </script>
-
                 <div class="ios-title">{{ _("Banned words") }}</div>
                 <div class="ios-group">
                     <div class="ios-row stack">
@@ -137,7 +93,6 @@
                     <a class="ios-row ios-link" href="{{ repo_url }}#readme" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #007AFF"><i class="bi bi-book-fill"></i></span>{{ _("Documentation") }}</span><i class="bi bi-box-arrow-up-right chev"></i></a>
                     <a class="ios-row ios-link" href="{{ repo_url }}/issues" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-bug-fill"></i></span>{{ _("Report an issue") }}</span><i class="bi bi-box-arrow-up-right chev"></i></a>
                     <a class="ios-row ios-link" href="{{ repo_url }}" target="_blank" rel="noopener"><span class="ios-label"><span class="row-ico" style="--c: #1C1C1E"><i class="bi bi-github"></i></span>GitHub</span><i class="bi bi-box-arrow-up-right chev"></i></a>
-                    <button type="button" class="ios-row ios-link ios-btn-row" onclick="vnWelcome.open()"><span class="ios-label"><span class="row-ico" style="--c: #FF9500"><i class="bi bi-stars"></i></span>{{ _("Show the welcome screen") }}</span><i class="bi bi-chevron-right chev"></i></button>
                     <button type="button" class="ios-row ios-button js-install" hidden><span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-phone"></i></span>{{ _("Install app") }}</span></button>
                 </div>
                 <p class="ios-foot">{{ _("Unofficial tool. Vinted and the Vinted logo are trademarks of Vinted UAB.") }}</p>

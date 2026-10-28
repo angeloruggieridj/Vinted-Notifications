@@ -1032,3 +1032,6 @@ a.kpi:hover { background: var(--fill); }
 .qcard { align-items: stretch; }
 .qcard .qstats { width: 100%; }
 .qcard .qchips { width: 100%; }
+
+/* round 13: the trash can sits top right, so the "below average" flag moves out of its way on narrow cards */
+@media (max-width: 575.98px) { .deal-flag { top: 3.1rem; } }
