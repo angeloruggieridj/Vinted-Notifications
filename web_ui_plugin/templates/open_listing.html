@@ -6,7 +6,7 @@
 <div class="text-center py-5">
     <h1 class="h3">{{ _("Opening Vinted") }}</h1>
     <p class="text-muted">{{ _("If the Vinted app does not open by itself, tap the button.") }}</p>
-    <p><a class="btn btn-primary btn-lg" id="openVinted" href="{{ target }}" rel="noopener">{{ _("Open in Vinted") }}</a></p>
+    <p><a class="btn btn-primary btn-lg" id="openVinted" href="{{ target }}" target="_blank" rel="noopener">{{ _("Open in Vinted") }}</a></p>
     <p><a href="{{ url_for('items') }}">{{ _("Back to items") }}</a></p>
 </div>
 {% endblock %}
@@ -21,7 +21,11 @@
             document.getElementById('openVinted').setAttribute('href', intent);
             window.location.replace(intent);
         }
-        // iOS: no automatic jump. A script-driven navigation to the https address goes to the browser; only the tap below can be claimed by the Vinted app.
+        else {
+            // iOS: same kind of link the items use (target=_blank), clicked for the user. If iOS wants a real tap it ignores
+            // this and the button stays; a plain location change is avoided because it goes to the browser.
+            setTimeout(function () { document.getElementById('openVinted').click(); }, 400);
+        }
     })();
 </script>
 {% endblock %}
