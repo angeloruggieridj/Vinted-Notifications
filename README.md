@@ -233,6 +233,10 @@ Install the web app on your phone (Android: *Install app*; iPhone/iPad, iOS 16.4
 sends a push: the switch is in the form for adding a query and in the one for editing it. Browsers only allow push over
 HTTPS, so serve the interface through the bundled reverse proxy (below) or your own.
 
+## 🧹 Sold and removed listings
+
+Under Settings > General > Stored items each account can switch on an automatic cleanup (every hour, 6 hours or day) and press **Check now**. Vinted has no endpoint for "is this listing still there", so the listing's own page is asked: a removed listing answers 404 (a cheap HEAD request), a sold one still loads with its purchase state in the page data. Anything unclear is treated as unknown and never deletes anything; a sold listing must be seen sold on two checks before it is dropped. Checks are paced (a small batch every 15 minutes, a pause between requests, each item at most once per interval), and opening an item in the app checks that one item once. Deleted items are remembered, so a later scan does not announce them again. A single item can also be removed with the trash can on its card.
+
 ## 🔒 HTTPS and security
 
 ```bash

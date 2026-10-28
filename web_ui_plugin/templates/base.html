@@ -91,6 +91,13 @@
     <a class="tab {% if path in ('/config', '/allowlist', '/logs') or path.startswith('/users') %}active{% endif %}" href="/config"><i class="bi bi-gear"></i><span>{{ _("Settings") }}</span></a>
 </nav>
 
+<!-- Listing card pop-up (Items page, dashboard) -->
+<div class="modal fade" id="itemSheet" tabindex="-1" aria-label="{{ _('Item') }}" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable lc-dialog">
+        <div class="modal-content lc-modal" id="itemSheetBody"></div>
+    </div>
+</div>
+
 <!-- Welcome screen: shown once when the installed app is opened for the first time -->
 <div class="welcome" id="welcome" hidden role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
     <div class="welcome-card">
@@ -427,6 +434,123 @@
             window.vnWelcome = {open: open};
 
             if (/[?&]welcome=1/.test(location.search) || (standalone && !seen())) open();
+        });
+    })();
+</script>
+<script>
+    // ---- Listing card: pop-up, availability check, removal ----
+    (function () {
+        function toast(message, status) {
+            const holder = document.querySelector('.flash-messages');
+            if (!holder || !message) return;
+            const el = document.createElement('div');
+            el.className = 'alert alert-' + (status === 'success' ? 'success' : 'danger') + ' flash-message fade show';
+            el.setAttribute('role', 'alert');
+            el.textContent = message;
+            holder.appendChild(el);
+            setTimeout(function () { el.remove(); }, 4000);
+        }
+        window.vnToast = toast;
+
+        function post(url) {
+            return fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Requested-With': 'fetch'}, credentials: 'same-origin', body: '{}'})
+                .then(function (r) { return r.json().then(function (j) { return {ok: r.ok, data: j}; }).catch(function () { return {ok: r.ok, data: {}}; }); });
+        }
+        window.vnPost = post;
+
+        function dropItem(id) {
+            document.querySelectorAll('[data-id="' + id + '"]').forEach(function (node) {
+                node.classList.add('gone');
+                setTimeout(function () { node.remove(); }, 260);
+            });
+        }
+
+        const modalEl = document.getElementById('itemSheet');
+        const body = document.getElementById('itemSheetBody');
+        function hideSheet() {
+            const instance = window.bootstrap && bootstrap.Modal.getInstance(modalEl);
+            if (instance) instance.hide();
+        }
+
+        // The card was just shown: Android launches the Vinted app by intent, and the listing is checked once
+        window.vnSheetInit = function (card) {
+            if (!card) return;
+            const open = card.querySelector('#openVinted');
+            if (open && /Android/i.test(navigator.userAgent)) open.setAttribute('href', open.getAttribute('data-android'));
+            const id = card.getAttribute('data-lc-item');
+            const state = card.querySelector('.lc-state');
+            if (!id || !state) return;
+            post('/api/items/' + id + '/check').then(function (res) {
+                const status = res.data && res.data.status;
+                if (res.data && res.data.removed) {
+                    state.textContent = vnT('No longer available: removed from your items');
+                    state.className = 'lc-state lc-state-gone';
+                    state.hidden = false;
+                    dropItem(id);
+                } else if (status === 'sold') {
+                    state.textContent = vnT('Sold');
+                    state.className = 'lc-state lc-state-gone';
+                    state.hidden = false;
+                } else if (status === 'removed') {
+                    state.textContent = vnT('No longer available');
+                    state.className = 'lc-state lc-state-gone';
+                    state.hidden = false;
+                }
+            }).catch(function () {});
+        };
+
+        function openSheet(id) {
+            fetch('/items/' + id + '/sheet', {headers: {'X-Requested-With': 'fetch'}, credentials: 'same-origin'})
+                .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
+                .then(function (html) {
+                    body.innerHTML = html;
+                    if (typeof vnLocalizeTimes === 'function') vnLocalizeTimes(body);
+                    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+                    vnSheetInit(body.querySelector('.lc-card'));
+                })
+                .catch(function () { toast(vnT('This listing is no longer in your items.'), 'error'); });
+        }
+
+        document.addEventListener('click', function (event) {
+            const target = event.target;
+            // X on the card
+            const close = target.closest && target.closest('[data-lc-close]');
+            if (close && close.closest('#itemSheet')) { event.preventDefault(); hideSheet(); return; }
+            // trash can: the first tap asks, the second removes
+            const del = target.closest && target.closest('.js-del-item');
+            if (del) {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!del.classList.contains('confirm')) {
+                    del.classList.add('confirm');
+                    clearTimeout(del._t);
+                    del._t = setTimeout(function () { del.classList.remove('confirm'); }, 3500);
+                    return;
+                }
+                clearTimeout(del._t);
+                del.disabled = true;
+                const id = del.getAttribute('data-item-id');
+                post('/api/items/' + id + '/delete').then(function (res) {
+                    if (res.ok) {
+                        dropItem(id);
+                        if (del.closest('#itemSheet')) hideSheet();
+                        if (del.closest('.lc-card') && !del.closest('#itemSheet')) window.location.href = '/items';
+                        toast(vnT('Removed from your items'), 'success');
+                    } else {
+                        del.disabled = false;
+                        del.classList.remove('confirm');
+                        toast((res.data && res.data.message) || vnT('Could not remove the item'), 'error');
+                    }
+                }).catch(function () { del.disabled = false; del.classList.remove('confirm'); });
+                return;
+            }
+            // a card or row: show its sheet (links and buttons inside keep their own job, except the photo)
+            const card = target.closest && target.closest('[data-sheet-item]');
+            if (!card) return;
+            const control = target.closest('a, button, input, select, label');
+            if (control && !control.classList.contains('deal-photo')) return;
+            if (control) event.preventDefault();
+            openSheet(card.getAttribute('data-sheet-item'));
         });
     })();
 </script>

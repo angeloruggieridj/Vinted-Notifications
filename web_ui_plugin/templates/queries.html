@@ -5,9 +5,12 @@
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
     <h1 class="h2">{{ _("Queries") }}</h1>
-    <button type="button" class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newQuery"
+</div>
+
+<div class="ios-group new-account">
+    <button type="button" class="ios-row ios-link ios-btn-row" data-bs-toggle="collapse" data-bs-target="#newQuery"
             aria-expanded="{{ 'true' if not queries else 'false' }}" aria-controls="newQuery">
-        <i class="bi bi-plus-lg me-1"></i> {{ _("New query") }}
+        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-plus-lg"></i></span>{{ _("New query") }}</span><i class="bi bi-chevron-down chev"></i>
     </button>
 </div>
 
@@ -50,27 +53,29 @@
 <div class="qlist">
     {% for query in queries %}
     <article class="qcard">
-        <div class="qmain">
-            <h2 class="qname">{{ query.display }}</h2>
-            <a class="qurl" href="{{ query.query }}" target="_blank" rel="noopener" title="{{ query.query }}">{{ query.query|replace('https://', '')|truncate(70) }} <i class="bi bi-box-arrow-up-right"></i></a>
-            <div class="qchips">
-                {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> {{ _("up to %(price)s", price=query.max_price) }}</span>{% endif %}
-                {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ _("%(n)s+ stars", n=query.min_stars) }}</span>{% endif %}
-                {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ _("%(n)s+ reviews", n=query.min_reviews) }}</span>{% endif %}
-                {% if query.push %}<span class="chip"><i class="bi bi-bell-fill"></i> {{ _("Push") }}</span>{% endif %}
-                {% if not (query.max_price or query.min_stars or query.min_reviews) %}<span class="chip chip-empty">{{ _("No filters") }}</span>{% endif %}
+        <header class="q-head">
+            <div class="q-title">
+                <h2 class="qname">{{ query.display }}</h2>
+                <a class="qurl" href="{{ query.query }}" target="_blank" rel="noopener" title="{{ query.query }}"><i class="bi bi-box-arrow-up-right"></i> <span>{{ query.host }}{% if query.terms %} &middot; {{ query.terms }}{% endif %}</span></a>
             </div>
+            <div class="q-tools">
+                <button type="button" class="q-tool" data-bs-toggle="modal" data-bs-target="#editModal{{ query.id }}" aria-label="{{ _('Edit') }}"><i class="bi bi-pencil"></i></button>
+                <button type="button" class="q-tool q-tool-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ query.id }}" aria-label="{{ _('Remove %(name)s', name=query.display) }}"><i class="bi bi-trash3"></i></button>
+            </div>
+        </header>
+        <div class="qchips">
+            {% if query.max_price %}<span class="chip"><i class="bi bi-tag"></i> {{ _("up to %(price)s", price=query.max_price) }}</span>{% endif %}
+            {% if query.min_stars %}<span class="chip"><i class="bi bi-star-fill"></i> {{ _("%(n)s+ stars", n=query.min_stars) }}</span>{% endif %}
+            {% if query.min_reviews %}<span class="chip"><i class="bi bi-chat-square-text"></i> {{ _("%(n)s+ reviews", n=query.min_reviews) }}</span>{% endif %}
+            {% if query.push %}<span class="chip"><i class="bi bi-bell-fill"></i> {{ _("Push") }}</span>{% endif %}
+            {% if not (query.max_price or query.min_stars or query.min_reviews or query.push) %}<span class="chip chip-empty">{{ _("No filters") }}</span>{% endif %}
         </div>
         <dl class="qstats">
             <div><dt>{{ _("Items") }}</dt><dd>{{ query.item_count }}</dd></div>
             <div><dt>{{ _("Average price") }}</dt><dd>{{ query.avg_price if query.avg_price else '-' }}</dd></div>
             <div><dt>{{ _("Last found") }}</dt><dd>{% if query.last_ts %}<time class="local-ts" data-rel="1" data-ts="{{ query.last_ts }}">{{ query.last_found_item }}</time>{% else %}{{ _("Never") }}{% endif %}</dd></div>
         </dl>
-        <div class="qactions">
-            <a href="/items?query={{ query.query_id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-bag me-1"></i> {{ _("Items") }}</a>
-            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ query.id }}"><i class="bi bi-pencil me-1"></i> {{ _("Edit") }}</button>
-            <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteModal{{ query.id }}" aria-label="{{ _('Remove %(name)s', name=query.display) }}"><i class="bi bi-trash3"></i></button>
-        </div>
+        <a href="/items?query={{ query.query_id }}" class="btn btn-primary q-items"><i class="bi bi-bag"></i> {{ _("See items") }}</a>
 
         <!-- Edit modal -->
         <div class="modal fade" id="editModal{{ query.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ query.id }}" aria-hidden="true">
@@ -147,9 +152,9 @@
 </div>
 
 {% if queries %}
-<div class="danger-zone">
-    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
-        <i class="bi bi-trash3 me-1"></i> {{ _("Remove all queries") }}
+<div class="ios-group danger-group">
+    <button type="button" class="ios-row ios-btn-row ios-danger" data-bs-toggle="modal" data-bs-target="#deleteAllModal">
+        <span class="ios-label"><span class="row-ico" style="--c: #FF3B30"><i class="bi bi-trash3"></i></span>{{ _("Remove all queries") }}</span>
     </button>
 </div>
 <div class="modal fade" id="deleteAllModal" tabindex="-1" aria-labelledby="deleteAllModalLabel" aria-hidden="true">

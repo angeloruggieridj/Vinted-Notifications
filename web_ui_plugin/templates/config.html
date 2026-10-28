@@ -67,6 +67,41 @@
                     </div>
                 </div>
 
+                <div class="ios-title">{{ _("Stored items") }}</div>
+                <div class="ios-group">
+                    <label class="ios-row" for="cleanup_interval"><span class="ios-label">{{ _("Remove sold and removed items") }}<span class="ios-sub">{{ _("Checks the saved listings on Vinted and drops the ones that are gone.") }}</span></span>
+                        <select class="ios-select" id="cleanup_interval" name="cleanup_interval">
+                            {% set cleanup = us.cleanup_interval or '0' %}
+                            <option value="0" {% if cleanup == '0' %}selected{% endif %}>{{ _("Off") }}</option>
+                            <option value="1" {% if cleanup == '1' %}selected{% endif %}>{{ _("Every hour") }}</option>
+                            <option value="6" {% if cleanup == '6' %}selected{% endif %}>{{ _("Every 6 hours") }}</option>
+                            <option value="24" {% if cleanup == '24' %}selected{% endif %}>{{ _("Every day") }}</option>
+                        </select></label>
+                    <button type="button" class="ios-row ios-link ios-btn-row" id="cleanupNow"><span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-arrow-repeat"></i></span><span class="ios-stack">{{ _("Check now") }}<span class="ios-sub" id="cleanupStatus" aria-live="polite"></span></span></span></button>
+                </div>
+                <p class="ios-foot">{{ _("Each item is looked at once per interval, a few at a time and with pauses, so Vinted is not overloaded. A sold item has to be seen sold twice before it goes. Opening an item also checks it.") }}</p>
+                <script>
+                    (function () {
+                        const button = document.getElementById('cleanupNow');
+                        const status = document.getElementById('cleanupStatus');
+                        function show(state) {
+                            if (state.running) status.textContent = vnT('Checking...') + ' ' + state.checked;
+                            else if (state.checked) status.textContent = vnT('Checked %(c)s items, removed %(r)s', {c: state.checked, r: state.removed});
+                        }
+                        function poll() {
+                            fetch('/api/items/cleanup', {headers: {'X-Requested-With': 'fetch'}, credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (state) {
+                                show(state);
+                                if (state.running) setTimeout(poll, 2000); else button.disabled = false;
+                            });
+                        }
+                        button.addEventListener('click', function () {
+                            button.disabled = true;
+                            status.textContent = vnT('Checking...');
+                            vnPost('/api/items/cleanup').then(function () { setTimeout(poll, 1500); });
+                        });
+                    })();
+                </script>
+
                 <div class="ios-title">{{ _("Banned words") }}</div>
                 <div class="ios-group">
                     <div class="ios-row stack">

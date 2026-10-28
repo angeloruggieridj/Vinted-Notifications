@@ -52,6 +52,8 @@ def ensure_schema():
             ("seller_login", "TEXT"),
             ("seller_stars", "REAL"),
             ("seller_reviews", "INTEGER"),
+            ("checked_at", "INTEGER"),  # when availability was last verified
+            ("available", "INTEGER"),  # 1 on sale, 0 seen as sold, NULL not known
         ):
             if col not in item_cols:
                 conn.execute(f"ALTER TABLE items ADD COLUMN {col} {col_type}")
@@ -76,6 +78,13 @@ def ensure_schema():
                 created_at INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
+            -- listings the account deleted (or that sold): remembered so a later scan does not announce them again
+            CREATE TABLE IF NOT EXISTS removed_items (
+                item NUMERIC NOT NULL,
+                user_id INTEGER NOT NULL,
+                removed_at INTEGER NOT NULL,
+                PRIMARY KEY (item, user_id)
+            );
             CREATE TABLE IF NOT EXISTS user_settings (
                 user_id INTEGER NOT NULL,
                 key TEXT NOT NULL,
@@ -128,7 +137,9 @@ def is_item_in_db_by_id(id, user_id):
     try:
         conn = sqlite3.connect(DB_PATH)
         row = conn.execute(
-            "SELECT COUNT() FROM items WHERE item=? AND user_id=?", (id, user_id)
+            "SELECT (SELECT COUNT() FROM items WHERE item=? AND user_id=?) "
+            "+ (SELECT COUNT() FROM removed_items WHERE item=? AND user_id=?)",
+            (id, user_id, id, user_id),
         ).fetchone()
         return bool(row[0])
     except Exception:
@@ -763,6 +774,7 @@ USER_SETTING_KEYS = (
     "telegram_chat_id",
     "rss_enabled",
     "feed_token",
+    "cleanup_interval",
 )
 
 
@@ -821,15 +833,99 @@ def list_users():
     return [dict(row) for row in rows]
 
 
+def _base_url(query_url):
+    from urllib.parse import urlparse
+
+    parsed = urlparse(query_url or "")
+    return f"{parsed.scheme}://{parsed.netloc}" if parsed.netloc else ""
+
+
 def get_item_for_user(item_id, user_id):
     """One collected item of an account (by Vinted's listing id), or None."""
     rows = _fetchall(
         "SELECT i.item, i.title, i.price, i.currency, i.timestamp, i.photo_url, i.seller_login, i.seller_stars, "
-        "i.seller_reviews, q.query_name FROM items i LEFT JOIN queries q ON q.id = i.query_id "
+        "i.seller_reviews, i.checked_at, i.available, q.query_name, q.query "
+        "FROM items i LEFT JOIN queries q ON q.id = i.query_id "
         "WHERE i.item=? AND i.user_id=? ORDER BY i.timestamp DESC LIMIT 1",
         (item_id, user_id),
     )
-    return dict(rows[0]) if rows else None
+    if not rows:
+        return None
+    row = dict(rows[0])
+    row["query_name"] = row.get("query_name") or ""
+    row["base_url"] = _base_url(row.pop("query", None))
+    row["url"] = f"{row['base_url']}/items/{int(row['item'])}" if row["base_url"] else ""
+    return row
+
+
+def delete_item(item_id, user_id):
+    """Remove one item from an account's collection. It is remembered so it is never announced again."""
+    import time
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        deleted = conn.execute("DELETE FROM items WHERE item=? AND user_id=?", (item_id, user_id)).rowcount
+        now = int(time.time())
+        conn.execute(
+            "INSERT OR REPLACE INTO removed_items (item, user_id, removed_at) VALUES (?, ?, ?)",
+            (item_id, user_id, now),
+        )
+        conn.execute("DELETE FROM removed_items WHERE removed_at < ?", (now - 90 * 86400,))
+        conn.commit()
+        return deleted
+    except Exception:
+        print_exc()
+        return 0
+    finally:
+        if conn:
+            conn.close()
+
+
+def mark_item_checked(item_id, user_id, available):
+    """Note that an item's availability was just verified (available: 1, 0 = seen sold, None = unknown)."""
+    import time
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        if available is None:
+            conn.execute("UPDATE items SET checked_at=? WHERE item=? AND user_id=?", (int(time.time()), item_id, user_id))
+        else:
+            conn.execute(
+                "UPDATE items SET checked_at=?, available=? WHERE item=? AND user_id=?",
+                (int(time.time()), available, item_id, user_id),
+            )
+        conn.commit()
+    except Exception:
+        print_exc()
+    finally:
+        if conn:
+            conn.close()
+
+
+def items_due_for_check(user_id, checked_before, limit):
+    """The account's items never checked, or last checked before `checked_before`, oldest first."""
+    rows = _fetchall(
+        "SELECT i.item, i.available, i.checked_at, q.query FROM items i LEFT JOIN queries q ON q.id = i.query_id "
+        "WHERE i.user_id=? AND (i.checked_at IS NULL OR i.checked_at < ?) "
+        "ORDER BY i.checked_at IS NOT NULL, i.checked_at ASC LIMIT ?",
+        (user_id, checked_before, limit),
+    )
+    out = []
+    for r in rows:
+        base = _base_url(r["query"])
+        if base:
+            out.append({"item": r["item"], "available": r["available"], "checked_at": r["checked_at"], "base_url": base})
+    return out
+
+
+def users_with_cleanup():
+    """Accounts that turned automatic cleanup of sold/removed items on."""
+    rows = _fetchall(
+        "SELECT DISTINCT user_id FROM user_settings WHERE key='cleanup_interval' AND value NOT IN ('', '0')"
+    )
+    return [r["user_id"] for r in rows]
 
 
 def get_recent_items(user_id, limit=5):

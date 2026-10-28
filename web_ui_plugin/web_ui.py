@@ -33,6 +33,7 @@ from urllib.parse import urlparse, parse_qs, quote
 from datetime import datetime
 from logger import get_logger
 import push
+import availability
 from web_ui_plugin import i18n, passwords
 
 # Get logger for this module
@@ -865,6 +866,8 @@ def _queries_overview():
                 "item_count": q[7],
                 "avg_price": round(q[8], 2) if q[8] else None,
                 "push": bool(q[9]),
+                "host": (urlparse(q[1]).netloc or "").removeprefix("www."),
+                "terms": (parse_qs(urlparse(q[1]).query).get("search_text") or [""])[0],
             }
         )
     return overview
@@ -1183,17 +1186,59 @@ def open_listing():
     target = request.args.get("u", "")
     if len(target) > 600 or not VINTED_LISTING.match(target):
         return redirect(url_for("items"))
-    parsed = urlparse(target)
-    android = "intent://" + parsed.netloc + parsed.path + (("?" + parsed.query) if parsed.query else "") + (
-        "#Intent;scheme=https;package=fr.vinted;S.browser_fallback_url=" + quote(target, safe="") + ";end"
-    )
     item = None
-    match = re.search(r"/items/(\d+)", parsed.path)
+    match = re.search(r"/items/(\d+)", urlparse(target).path)
     if match:
         item = db.get_item_for_user(int(match.group(1)), current_uid())
     return render_template(
-        "open_listing.html", target=target, android_intent=android, item=item, reliability=_seller_reliability(item)
+        "open_listing.html", target=target, android_intent=_android_intent(target), item=item,
+        reliability=_seller_reliability(item), modal=False,
     )
+
+
+def _android_intent(target):
+    """Link that launches the Vinted app on Android (the website is the fallback)."""
+    parsed = urlparse(target)
+    return "intent://" + parsed.netloc + parsed.path + (("?" + parsed.query) if parsed.query else "") + (
+        "#Intent;scheme=https;package=fr.vinted;S.browser_fallback_url=" + quote(target, safe="") + ";end"
+    )
+
+
+@app.route("/items/<int:item_id>/sheet")
+def item_sheet(item_id):
+    """The listing card, as a fragment for the pop-up on the Items page."""
+    item = db.get_item_for_user(item_id, current_uid())
+    if not item or not item["url"]:
+        return ("", 404)
+    return render_template(
+        "_listing_sheet.html", item=item, target=item["url"], android_intent=_android_intent(item["url"]),
+        reliability=_seller_reliability(item), modal=True,
+    )
+
+
+@app.route("/api/items/<int:item_id>/delete", methods=["POST"])
+def api_item_delete(item_id):
+    uid = current_uid()
+    if not db.get_item_for_user(item_id, uid):
+        return jsonify({"status": "error", "message": tr("This listing is no longer in your items.")}), 404
+    db.delete_item(item_id, uid)
+    return jsonify({"status": "success", "message": tr("Removed from your items")})
+
+
+@app.route("/api/items/<int:item_id>/check", methods=["POST"])
+def api_item_check(item_id):
+    """Is this listing still for sale? Looked up once when its card is opened (see availability.py)."""
+    status, removed = availability.check_one(current_uid(), item_id)
+    return jsonify({"status": status, "removed": removed})
+
+
+@app.route("/api/items/cleanup", methods=["GET", "POST"])
+def api_items_cleanup():
+    """Settings > "Check now": verify the account's stored items in the background."""
+    uid = current_uid()
+    if request.method == "POST":
+        availability.start_manual(uid)
+    return jsonify(availability.manual_state(uid))
 
 
 def _seller_reliability(item):
@@ -1268,6 +1313,8 @@ def update_config():
     db.set_user_setting(uid, "banwords", form.get("banwords", ""))
     db.set_user_setting(uid, "items_autorefresh", str("items_autorefresh" in form))
     db.set_user_setting(uid, "new_items_notice", str("new_items_notice" in form))
+    interval = form.get("cleanup_interval", "0")
+    db.set_user_setting(uid, "cleanup_interval", interval if interval in availability.INTERVALS else "0")
     timezone = form.get("timezone", "").strip()
     try:
         if timezone:

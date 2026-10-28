@@ -20,6 +20,7 @@ if not os.path.exists("./data/vinted_notifications.db"):
 
 db.ensure_schema()
 
+import availability
 import core
 import push
 from rss_feed_plugin.rss_feed import rss_feed_process
@@ -58,6 +59,15 @@ def scraper_process(items_queue):
         seconds=2,
         args=[items_queue],
         name="pending_scans",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Sold and removed listings are dropped from the collection for accounts that asked for it
+    scraper_scheduler.add_job(
+        availability.sweep,
+        "interval",
+        minutes=15,
+        name="availability",
         max_instances=1,
         coalesce=True,
     )

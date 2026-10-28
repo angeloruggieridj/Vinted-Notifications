@@ -3,57 +3,11 @@
 {% block title %}{{ _("Open in Vinted") }}{% endblock %}
 
 {% block content %}
-<div class="sheet-wrap">
-    <article class="sheet glass">
-        {% if item %}
-        <div class="sheet-photo">
-            {% if item.photo_url %}<img src="{{ item.photo_url }}" alt="">{% else %}<span class="ph"><i class="bi bi-image"></i></span>{% endif %}
-            <span class="sheet-price">{{ item.price }} {{ item.currency }}</span>
-        </div>
-        <div class="sheet-body">
-            <h1 class="sheet-title">{{ item.title }}</h1>
-            <p class="sheet-meta">
-                {% if item.query_name %}<span>{{ item.query_name }}</span>{% endif %}
-                <span><i class="bi bi-clock"></i> <time class="local-ts" data-rel="1" data-ts="{{ item.timestamp }}"></time></span>
-            </p>
-            <div class="sheet-seller">
-                <span class="sheet-avatar" aria-hidden="true">{{ (item.seller_login or "?")[:1]|upper }}</span>
-                <div class="sheet-seller-main">
-                    <div class="sheet-seller-name">{{ item.seller_login or _("Seller unknown") }}</div>
-                    {% if reliability[0] == "none" %}
-                    <div class="sheet-seller-sub">{{ _("no rating") }}</div>
-                    {% else %}
-                    <div class="sheet-seller-sub"><span class="rating"><i class="bi bi-star-fill"></i> {{ '%.1f'|format(item.seller_stars) }} <small>({{ item.seller_reviews or 0 }})</small></span></div>
-                    {% endif %}
-                </div>
-                {% if reliability[0] != "none" %}
-                <span class="trust trust-{{ reliability[0] }}">
-                    {% if reliability[0] == "high" %}{{ _("Very reliable") }}{% elif reliability[0] == "good" %}{{ _("Reliable") }}{% elif reliability[0] == "new" %}{{ _("New seller") }}{% else %}{{ _("Check before buying") }}{% endif %}
-                </span>
-                {% endif %}
-            </div>
-            {% if reliability[0] != "none" %}
-            <div class="trust-meter" role="img" aria-label="{{ _('Seller reliability') }} {{ reliability[1] }}%"><span class="trust-{{ reliability[0] }}" style="width: {{ reliability[1] }}%"></span></div>
-            {% endif %}
-        </div>
-        {% else %}
-        <div class="sheet-body sheet-empty">
-            <h1 class="sheet-title">{{ _("Opening Vinted") }}</h1>
-            <p class="sheet-meta">{{ _("This listing is no longer in your items.") }}</p>
-        </div>
-        {% endif %}
-        <div class="sheet-actions">
-            <a class="btn btn-primary btn-lg" id="openVinted" href="{{ target }}" target="_blank" rel="noopener">{{ _("Open in Vinted") }} <i class="bi bi-box-arrow-up-right"></i></a>
-            <a class="sheet-back" href="{{ url_for('items') }}">{{ _("Back to items") }}</a>
-        </div>
-    </article>
+<div class="lc-wrap">
+    {% include "_listing_sheet.html" %}
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-    // Android: the button launches the Vinted app through an intent (the website is the fallback).
-    // iOS: the https link is claimed by the Vinted app when it is tapped.
-    if (/Android/i.test(navigator.userAgent)) document.getElementById('openVinted').setAttribute('href', {{ android_intent|tojson }});
-</script>
+<script>document.addEventListener('DOMContentLoaded', function () { vnSheetInit(document.querySelector('.sheet-card')); });</script>
 {% endblock %}
