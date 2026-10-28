@@ -8,7 +8,7 @@
     <h1 class="h2">{{ _("Dashboard") }}</h1>
 </div>
 
-<div class="kpis">
+<div class="kpis" data-live="kpis">
     <a class="kpi" href="/items">
         <span class="kpi-label"><i class="bi bi-bag"></i> {{ _("Items collected") }}</span>
         <strong class="kpi-value">{{ stats.total_items }}</strong>
@@ -33,6 +33,7 @@
             <h2>{{ _("Latest finds") }}</h2>
             <a href="/items" class="btn btn-sm btn-outline-primary">{{ _("All items") }} <i class="bi bi-arrow-right"></i></a>
         </div>
+        <div data-live="latest">
         {% if items %}
         <div class="deal-grid deal-grid-compact">
             {% for item in items %}{{ deal_card(item) }}{% endfor %}
@@ -44,6 +45,7 @@
             {% if stats.total_queries %}{{ _("Listings appear here as soon as your queries match them.") }}{% else %}<a href="/queries">{{ _("Add your first query") }}</a> {{ _("to start collecting listings.") }}{% endif %}
         </div>
         {% endif %}
+        </div>
     </section>
 
     <aside class="dash-side">
@@ -81,6 +83,7 @@
                 <h2>{{ _("Queries") }}</h2>
                 <a href="/queries" class="btn btn-sm btn-outline-secondary">{{ _("Manage") }}</a>
             </div>
+            <div data-live="queries">
             {% for query in queries %}
             <a class="mini-query" href="/items?query={{ query.query_id }}">
                 <span class="mini-query-name">{{ query.display }}</span>
@@ -90,6 +93,7 @@
             {% else %}
             <p class="text-muted small mb-0">{{ _("No queries yet.") }} <a href="/queries">{{ _("Add one") }}</a> {{ _("to start.") }}</p>
             {% endfor %}
+            </div>
         </section>
     </aside>
 </div>
@@ -97,6 +101,30 @@
 
 {% block scripts %}
 <script>
+    // Live dashboard: the figures, latest finds and queries refresh by themselves (phones included).
+    // Paused while the app is in the background, refreshed as soon as it comes back.
+    (function () {
+        let busy = false;
+        function tick() {
+            if (document.hidden || busy) return;
+            busy = true;
+            fetch(location.pathname, {headers: {'X-Requested-With': 'fetch'}, cache: 'no-store', credentials: 'same-origin'})
+                .then(function (r) { return r.ok ? r.text() : null; })
+                .then(function (html) {
+                    if (!html) return;
+                    const doc = new DOMParser().parseFromString(html, 'text/html');
+                    document.querySelectorAll('[data-live]').forEach(function (node) {
+                        const fresh = doc.querySelector('[data-live="' + node.getAttribute('data-live') + '"]');
+                        if (fresh && fresh.innerHTML !== node.innerHTML) node.innerHTML = fresh.innerHTML;
+                    });
+                    if (typeof vnLocalizeTimes === 'function') vnLocalizeTimes(document);
+                })
+                .catch(function () {})
+                .then(function () { busy = false; });
+        }
+        setInterval(tick, 30000);
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) tick(); });
+    })();
     document.addEventListener('DOMContentLoaded', function () {
         function toast(message, status) {
             const kind = status === 'success' ? 'success' : status === 'warning' ? 'warning' : 'danger';

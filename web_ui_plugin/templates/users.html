@@ -9,9 +9,6 @@
 
 <div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
     <h1 class="h2">{{ _("Accounts") }}</h1>
-    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newUserSheet">
-        <i class="bi bi-person-plus-fill me-1"></i> {{ _("New account") }}
-    </button>
 </div>
 
 <div class="contacts-tools">
@@ -25,6 +22,12 @@
         <button type="button" class="seg" data-filter="user">{{ _("Members") }}<span class="seg-count">{{ members|length }}</span></button>
         {% if disabled %}<button type="button" class="seg" data-filter="disabled">{{ _("Disabled") }}<span class="seg-count">{{ disabled|length }}</span></button>{% endif %}
     </div>
+</div>
+
+<div class="ios-group new-account">
+    <button type="button" class="ios-row ios-link ios-btn-row" data-bs-toggle="modal" data-bs-target="#newUserSheet">
+        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-person-plus-fill"></i></span>{{ _("New account") }}</span><i class="bi bi-chevron-right chev"></i>
+    </button>
 </div>
 
 {% for title, group, kind in ((_("Administrators"), admins, 'admin'), (_("Members"), members, 'user'), (_("Disabled"), disabled, 'disabled')) %}

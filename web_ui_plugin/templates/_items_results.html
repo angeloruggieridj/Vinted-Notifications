@@ -66,7 +66,7 @@
                 <td><div class="seller">{{ seller_info(item) }}</div></td>
                 <td>{{ item.query|truncate(28) }}</td>
                 <td class="text-nowrap"><time class="local-ts" data-ts="{{ item.ts }}">{{ item.timestamp }}</time></td>
-                <td class="text-end"><a href="{{ item.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">{{ _("Open") }} <i class="bi bi-box-arrow-up-right"></i></a></td>
+                <td class="text-end"><a href="{{ item.url }}" target="_blank" rel="noopener" class="deal-open">{{ _("Open") }} <i class="bi bi-box-arrow-up-right"></i></a></td>
             </tr>
             {% endfor %}
             </tbody>

@@ -728,6 +728,8 @@ def inject_version_info():
     is_up_to_date, current_ver, latest_version, github_url = _cached_check_version()
     return {
         "github_url": github_url,
+        # Documentation, issues and the GitHub row point at this project's repository (override with VN_REPO_URL)
+        "repo_url": (os.environ.get("VN_REPO_URL") or "https://github.com/angeloruggieridj/Vinted-Notifications").rstrip("/"),
         "current_version": current_ver,
         "latest_version": latest_version,
         "is_up_to_date": is_up_to_date,
