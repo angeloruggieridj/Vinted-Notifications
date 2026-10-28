@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}{{ _("Open in Vinted") }}{% endblock %}
+
+{% block content %}
+<div class="text-center py-5">
+    <h1 class="h3">{{ _("Opening Vinted") }}</h1>
+    <p class="text-muted">{{ _("If the Vinted app does not open by itself, tap the button.") }}</p>
+    <p><a class="btn btn-primary btn-lg" id="openVinted" href="{{ target }}" rel="noopener">{{ _("Open in Vinted") }}</a></p>
+    <p><a href="{{ url_for('items') }}">{{ _("Back to items") }}</a></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        const web = {{ target|tojson }};
+        const intent = {{ android_intent|tojson }};
+        // Android: an intent launches the Vinted app (and falls back to the website); iOS: the https link is a universal link
+        // that the Vinted app claims when installed, which iOS only honours from a tap, hence the button above.
+        if (/Android/i.test(navigator.userAgent)) {
+            document.getElementById('openVinted').setAttribute('href', intent);
+            window.location.replace(intent);
+        } else {
+            setTimeout(function () { window.location.href = web; }, 300);
+        }
+    })();
+</script>
+{% endblock %}

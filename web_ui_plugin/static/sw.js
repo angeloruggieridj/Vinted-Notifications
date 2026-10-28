@@ -3,7 +3,7 @@
  * It deliberately caches no pages and no API responses: listings and settings always come
  * from the server (and may sit behind a login). Only static assets are cached.
  */
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL_CACHE = 'vn-shell-' + VERSION;
 const ASSET_CACHE = 'vn-assets-' + VERSION;
 const PRECACHE = ['/offline', '/static/css/custom.css', '/static/icons/icon-192.png'];
@@ -95,10 +95,11 @@ function tellPages(message) {
 
 self.addEventListener('notificationclick', function (event) {
     event.notification.close();
-    // Always land inside the app (its own window when installed). A Vinted listing is reached from the Items page:
-    // opening the https address directly would leave the app for the browser.
+    // Open inside the installed web app (never straight in the browser). A listing goes through /open, which
+    // launches the Vinted app on that listing; internal paths just open the app.
     let target = (event.notification.data && event.notification.data.url) || '/items';
-    if (!/^\//.test(target) || /^\/\//.test(target)) target = '/items';
+    if (/^https:/.test(target)) target = '/open?u=' + encodeURIComponent(target);
+    else if (!/^\//.test(target) || /^\/\//.test(target)) target = '/items';
     event.waitUntil(
         clients.matchAll({type: 'window', includeUncontrolled: true}).then(function (windows) {
             for (const client of windows) {

@@ -484,5 +484,9 @@
   "Notifications are now on for this device.": "Le notifiche sono ora attive su questo dispositivo.",
   "A push reached this device.": "Una notifica push è arrivata a questo dispositivo.",
   "A push reached this device and its notification was shown.": "Una notifica push è arrivata a questo dispositivo ed è stata mostrata.",
-  "Notification on its way in %(n)s seconds: leave the app or lock the screen to see it.": "Notifica in arrivo tra %(n)s secondi: esci dall'app o blocca lo schermo per vederla."
+  "Notification on its way in %(n)s seconds: leave the app or lock the screen to see it.": "Notifica in arrivo tra %(n)s secondi: esci dall'app o blocca lo schermo per vederla.",
+  "Open in Vinted": "Apri in Vinted",
+  "Opening Vinted": "Apertura di Vinted",
+  "If the Vinted app does not open by itself, tap the button.": "Se l'app Vinted non si apre da sola, tocca il pulsante.",
+  "Back to items": "Torna agli articoli"
 }

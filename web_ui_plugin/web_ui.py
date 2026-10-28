@@ -29,7 +29,7 @@ import secrets
 import threading
 import time
 import zoneinfo
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 from datetime import datetime
 from logger import get_logger
 import push
@@ -1169,6 +1169,23 @@ def service_worker():
     response.headers["Cache-Control"] = "no-cache"
     response.headers["Service-Worker-Allowed"] = "/"
     return response
+
+
+VINTED_LISTING = re.compile(r"^https://(?:[a-z0-9-]+\.)*vinted\.[a-z]{2,}(?:\.[a-z]{2})?/[^\s]*$", re.IGNORECASE)
+
+
+@app.route("/open")
+def open_listing():
+    """Hand a listing over to the Vinted app. A notification lands here (inside the installed web app);
+    the page then launches the Vinted app, with a button as fallback for when the phone needs a tap."""
+    target = request.args.get("u", "")
+    if len(target) > 600 or not VINTED_LISTING.match(target):
+        return redirect(url_for("items"))
+    parsed = urlparse(target)
+    android = "intent://" + parsed.netloc + parsed.path + (("?" + parsed.query) if parsed.query else "") + (
+        "#Intent;scheme=https;package=fr.vinted;S.browser_fallback_url=" + quote(target, safe="") + ";end"
+    )
+    return render_template("open_listing.html", target=target, android_intent=android)
 
 
 @app.route("/offline")
