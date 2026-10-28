@@ -868,3 +868,33 @@ a.kpi:hover { background: var(--fill); }
 .welcome-skip { border: 0; background: transparent; color: var(--label-2); font-weight: 600; padding: .3rem .8rem; }
 .welcome-open { overflow: hidden; }
 @keyframes welcome-in { from { opacity: 0; transform: scale(1.03); } to { opacity: 1; transform: none; } }
+
+/* ---- Listing sheet (notification landing): a Liquid Glass card, like an iOS sheet */
+.sheet-wrap { max-width: 26rem; margin: 0 auto; padding: .5rem 0 calc(1rem + var(--safe-bottom)); }
+.sheet { border-radius: 34px; padding: 10px; overflow: hidden; }
+.sheet-photo { position: relative; aspect-ratio: 1 / 1; border-radius: 26px; overflow: hidden; background: var(--fill); }
+.sheet-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.sheet-photo .ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--label-3); font-size: 3rem; }
+.sheet-price { position: absolute; left: .75rem; bottom: .75rem; padding: .4rem 1rem; border-radius: 999px; font-weight: 700; font-size: 1.25rem; letter-spacing: -.02em; color: var(--label); background: var(--glass-strong); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 4px 16px rgba(0, 0, 0, .18); }
+.sheet-body { padding: 1rem .6rem .4rem; text-align: left; }
+.sheet-title { font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; margin: 0; overflow-wrap: anywhere; }
+.sheet-meta { display: flex; flex-wrap: wrap; gap: .25rem .9rem; margin: .4rem 0 0; color: var(--label-2); font-size: .85rem; }
+.sheet-seller { display: flex; align-items: center; gap: .75rem; margin-top: 1rem; padding: .7rem .8rem; background: var(--fill); border-radius: 18px; }
+.sheet-avatar { flex: none; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 1.1rem; color: var(--on-tint); background: linear-gradient(145deg, var(--tint), var(--tint-strong)); }
+.sheet-seller-main { min-width: 0; flex: 1; }
+.sheet-seller-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-seller-sub { color: var(--label-2); font-size: .85rem; }
+.sheet-seller-sub .rating { margin-left: 0; }
+.trust { flex: none; border-radius: 999px; padding: .2rem .65rem; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.trust.trust-high, .trust.trust-good { background: var(--green-wash); color: var(--green-text); }
+.trust.trust-new { background: var(--orange-wash); color: var(--orange-text); }
+.trust.trust-low { background: var(--red-wash); color: var(--red-text); }
+.trust-meter { height: 6px; margin: .75rem .2rem 0; border-radius: 999px; background: var(--fill-2); overflow: hidden; }
+.trust-meter span { display: block; height: 100%; border-radius: inherit; }
+.trust-meter .trust-high, .trust-meter .trust-good { background: var(--green); }
+.trust-meter .trust-new { background: #FF9F0A; }
+.trust-meter .trust-low { background: var(--red); }
+.sheet-actions { display: flex; flex-direction: column; align-items: center; gap: .6rem; padding: 1.1rem .4rem .5rem; }
+.sheet-actions .btn { width: 100%; border-radius: 999px; padding: .85rem 1rem; font-weight: 600; }
+.sheet-back { color: var(--tint); font-weight: 500; text-decoration: none; }
+.sheet-empty { text-align: center; padding: 2rem .6rem 1rem; }

@@ -1185,7 +1185,28 @@ def open_listing():
     android = "intent://" + parsed.netloc + parsed.path + (("?" + parsed.query) if parsed.query else "") + (
         "#Intent;scheme=https;package=fr.vinted;S.browser_fallback_url=" + quote(target, safe="") + ";end"
     )
-    return render_template("open_listing.html", target=target, android_intent=android)
+    item = None
+    match = re.search(r"/items/(\d+)", parsed.path)
+    if match:
+        item = db.get_item_for_user(int(match.group(1)), current_uid())
+    return render_template(
+        "open_listing.html", target=target, android_intent=android, item=item, reliability=_seller_reliability(item)
+    )
+
+
+def _seller_reliability(item):
+    """(level, percent) for the seller summary: from Vinted's 0-5 stars, tempered by how few reviews back them."""
+    if not item or item.get("seller_stars") is None:
+        return ("none", 0)
+    stars, reviews = float(item["seller_stars"]), int(item.get("seller_reviews") or 0)
+    percent = int(round(max(0.0, min(stars, 5.0)) / 5 * 100))
+    if reviews < 5:
+        return ("new", percent)
+    if stars >= 4.5 and reviews >= 20:
+        return ("high", percent)
+    if stars >= 4.0:
+        return ("good", percent)
+    return ("low", percent)
 
 
 @app.route("/offline")

@@ -821,6 +821,17 @@ def list_users():
     return [dict(row) for row in rows]
 
 
+def get_item_for_user(item_id, user_id):
+    """One collected item of an account (by Vinted's listing id), or None."""
+    rows = _fetchall(
+        "SELECT i.item, i.title, i.price, i.currency, i.timestamp, i.photo_url, i.seller_login, i.seller_stars, "
+        "i.seller_reviews, q.query_name FROM items i LEFT JOIN queries q ON q.id = i.query_id "
+        "WHERE i.item=? AND i.user_id=? ORDER BY i.timestamp DESC LIMIT 1",
+        (item_id, user_id),
+    )
+    return dict(rows[0]) if rows else None
+
+
 def get_recent_items(user_id, limit=5):
     """The newest items collected for an account, with the query they came from."""
     rows = _fetchall(
