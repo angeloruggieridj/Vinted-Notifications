@@ -14,16 +14,14 @@
 {% block scripts %}
 <script>
     (function () {
-        const web = {{ target|tojson }};
         const intent = {{ android_intent|tojson }};
         // Android: an intent launches the Vinted app (and falls back to the website); iOS: the https link is a universal link
         // that the Vinted app claims when installed, which iOS only honours from a tap, hence the button above.
         if (/Android/i.test(navigator.userAgent)) {
             document.getElementById('openVinted').setAttribute('href', intent);
             window.location.replace(intent);
-        } else {
-            setTimeout(function () { window.location.href = web; }, 300);
         }
+        // iOS: no automatic jump. A script-driven navigation to the https address goes to the browser; only the tap below can be claimed by the Vinted app.
     })();
 </script>
 {% endblock %}
