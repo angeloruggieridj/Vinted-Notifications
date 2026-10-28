@@ -1012,3 +1012,23 @@ a.kpi:hover { background: var(--fill); }
 .deal > .deal-foot .deal-del.confirm { width: auto; padding: 0 .65rem; background: var(--red); color: #fff; border-color: transparent; }
 .deal-query { max-width: calc(100% - 4rem); }
 .lc-modal .lc-photo { aspect-ratio: 4 / 3; max-height: 42vh; }
+
+/* ================================================================ round 12 */
+/* Segmented control made of radio buttons, filling its row */
+.segmented.seg-full { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); width: 100%; }
+.segmented.seg-full .seg { position: relative; min-width: 0; padding: .35rem .2rem; font-size: .8rem; justify-content: center; text-align: center; cursor: pointer; }
+.segmented.seg-full .seg input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.segmented.seg-full .seg span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segmented.seg-full .seg:has(input:focus-visible) { box-shadow: 0 0 0 3px var(--tint-ring); }
+.ios-value { color: var(--label-2); font-size: .85rem; text-align: right; min-width: 0; }
+.ios-row.ios-btn-row .ios-label { gap: .75rem; }
+
+/* Sheets: the main action is a button under the form */
+.sheet-submit { width: 100%; margin-top: 1.25rem; border-radius: 999px; min-height: 3rem; font-weight: 650; }
+.ios-input-wide { flex: none; width: 100%; text-align: left; padding: .1rem 0; }
+.ios-row.stack > .ios-input-wide { border-bottom: 0; }
+.sheet .ios-row .ios-sub { white-space: normal; }
+.sheet .ios-row > .ios-input { max-width: 55%; }
+.qcard { align-items: stretch; }
+.qcard .qstats { width: 100%; }
+.qcard .qchips { width: 100%; }

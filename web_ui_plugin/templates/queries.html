@@ -2,52 +2,58 @@
 
 {% block title %}{{ _("Queries - Vinted Notifications") }}{% endblock %}
 
+{% macro query_fields(p, q) %}
+<div class="ios-group">
+    <label class="ios-row stack" for="query{{ p }}"><span class="ios-label">{{ _("Vinted search URL") }}</span>
+        <input type="url" inputmode="url" class="ios-input ios-input-wide" id="query{{ p }}" name="query" value="{{ q.query if q else '' }}" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes"></label>
+</div>
+<p class="ios-foot">{{ _("Run the search on Vinted with your filters, then paste the page address here.") }}</p>
+<div class="ios-group">
+    <label class="ios-row" for="query_name{{ p }}"><span class="ios-label">{{ _("Name") }}</span>
+        <input type="text" class="ios-input" id="query_name{{ p }}" name="query_name" value="{{ q.name if q else '' }}" placeholder="{{ _('Optional') }}"></label>
+    <label class="ios-row" for="max_price{{ p }}"><span class="ios-label">{{ _("Max price") }}</span>
+        <input type="number" inputmode="decimal" class="ios-input" id="max_price{{ p }}" name="max_price" min="0" step="any" value="{{ q.max_price if q else '' }}" placeholder="{{ _('No limit') }}"></label>
+    <label class="ios-row" for="min_stars{{ p }}"><span class="ios-label">{{ _("Min seller stars") }}</span>
+        <input type="number" inputmode="decimal" class="ios-input" id="min_stars{{ p }}" name="min_stars" min="0" max="5" step="0.1" value="{{ q.min_stars if q else '' }}" placeholder="{{ _('Any') }}"></label>
+    <label class="ios-row" for="min_reviews{{ p }}"><span class="ios-label">{{ _("Min seller reviews") }}</span>
+        <input type="number" inputmode="numeric" class="ios-input" id="min_reviews{{ p }}" name="min_reviews" min="0" step="1" value="{{ q.min_reviews if q else '' }}" placeholder="{{ _('Any') }}"></label>
+</div>
+<p class="ios-foot">{{ _("Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.") }}</p>
+<div class="ios-group">
+    <div class="ios-row">
+        <label class="ios-label" for="push{{ p }}">{{ _("Push notifications for this query") }}<span class="ios-sub">{{ _("Push messages reach the devices where you turned notifications on in Settings.") }}</span></label>
+        <span class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="push{{ p }}" name="push" {% if (q and q.push) or not q %}checked{% endif %}></span>
+    </div>
+</div>
+{% endmacro %}
+
 {% block content %}
 <div class="d-flex justify-content-between flex-wrap align-items-center gap-2">
     <h1 class="h2">{{ _("Queries") }}</h1>
 </div>
 
 <div class="ios-group new-account">
-    <button type="button" class="ios-row ios-link ios-btn-row" data-bs-toggle="collapse" data-bs-target="#newQuery"
-            aria-expanded="{{ 'true' if not queries else 'false' }}" aria-controls="newQuery">
-        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-plus-lg"></i></span>{{ _("New query") }}</span><i class="bi bi-chevron-down chev"></i>
+    <button type="button" class="ios-row ios-link ios-btn-row" data-bs-toggle="modal" data-bs-target="#newQuerySheet">
+        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-plus-lg"></i></span>{{ _("New query") }}</span><i class="bi bi-chevron-right chev"></i>
     </button>
 </div>
 
-<div class="collapse {% if not queries %}show{% endif %}" id="newQuery">
-    <form action="/add_query" method="post" class="panel query-form">
-        <div class="mb-3">
-            <label for="query" class="form-label">{{ _("Vinted search URL") }}</label>
-            <input type="url" inputmode="url" class="form-control" id="query" name="query" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://www.vinted.fr/catalog?search_text=nike+shoes">
-            <div class="form-text">{{ _("Run the search on Vinted with your filters, then paste the page address here.") }}</div>
-        </div>
-        <div class="query-fields">
-            <div>
-                <label for="query_name" class="form-label">{{ _("Name") }}</label>
-                <input type="text" class="form-control" id="query_name" name="query_name" placeholder="{{ _('Optional') }}">
+<!-- New query -->
+<div class="modal fade sheet" id="newQuerySheet" tabindex="-1" aria-labelledby="newQueryLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <form class="modal-content" action="/add_query" method="post">
+            <div class="sheet-grabber" aria-hidden="true"></div>
+            <div class="sheet-bar">
+                <button type="button" class="sheet-action" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
+                <h2 class="sheet-title" id="newQueryLabel">{{ _("New query") }}</h2>
+                <span></span>
             </div>
-            <div>
-                <label for="max_price" class="form-label">{{ _("Max price") }}</label>
-                <input type="number" class="form-control" id="max_price" name="max_price" min="0" step="any" placeholder="{{ _('No limit') }}">
+            <div class="sheet-body">
+                {{ query_fields('_new', none) }}
+                <button type="submit" class="btn btn-primary btn-lg sheet-submit"><i class="bi bi-plus-lg"></i> {{ _("Add query") }}</button>
             </div>
-            <div>
-                <label for="min_stars" class="form-label">{{ _("Min seller stars") }}</label>
-                <input type="number" class="form-control" id="min_stars" name="min_stars" min="0" max="5" step="0.1" placeholder="{{ _('Any') }}">
-            </div>
-            <div>
-                <label for="min_reviews" class="form-label">{{ _("Min seller reviews") }}</label>
-                <input type="number" class="form-control" id="min_reviews" name="min_reviews" min="0" step="1" placeholder="{{ _('Any') }}">
-            </div>
-            <div class="align-self-end">
-                <button type="submit" class="btn btn-primary w-100">{{ _("Add query") }}</button>
-            </div>
-        </div>
-        <div class="form-check form-switch mt-3">
-            <input class="form-check-input" type="checkbox" role="switch" id="push_new" name="push" checked>
-            <label class="form-check-label" for="push_new">{{ _("Push notifications for this query") }}</label>
-        </div>
-        <div class="form-text mt-2">{{ _("Listings above the max price, or from sellers below the stars/reviews you set, are skipped before they reach you.") }} {{ _("Push messages reach the devices where you turned notifications on in Settings.") }}</div>
-    </form>
+        </form>
+    </div>
 </div>
 
 <div class="qlist">
@@ -77,45 +83,19 @@
         </dl>
         <a href="/items?query={{ query.query_id }}" class="btn btn-primary q-items"><i class="bi bi-bag"></i> {{ _("See items") }}</a>
 
-        <!-- Edit modal -->
-        <div class="modal fade" id="editModal{{ query.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ query.id }}" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
+        <!-- Edit sheet -->
+        <div class="modal fade sheet" id="editModal{{ query.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ query.id }}" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
                 <form class="modal-content" action="/update_query/{{ query.query_id }}" method="post">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="editModalLabel{{ query.id }}">{{ _("Edit query") }}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ _('Close') }}"></button>
+                    <div class="sheet-grabber" aria-hidden="true"></div>
+                    <div class="sheet-bar">
+                        <button type="button" class="sheet-action" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
+                        <h2 class="sheet-title" id="editModalLabel{{ query.id }}">{{ _("Edit query") }}</h2>
+                        <span></span>
                     </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label for="query{{ query.id }}" class="form-label">{{ _("Vinted search URL") }}</label>
-                            <input type="url" class="form-control" id="query{{ query.id }}" name="query" value="{{ query.query }}" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="query_name{{ query.id }}" class="form-label">{{ _("Name") }}</label>
-                            <input type="text" class="form-control" id="query_name{{ query.id }}" name="query_name" value="{{ query.name }}" placeholder="{{ _('Optional') }}">
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-4">
-                                <label for="max_price{{ query.id }}" class="form-label">{{ _("Max price") }}</label>
-                                <input type="number" class="form-control" id="max_price{{ query.id }}" name="max_price" min="0" step="any" value="{{ query.max_price }}" placeholder="{{ _('No limit') }}">
-                            </div>
-                            <div class="col-4">
-                                <label for="min_stars{{ query.id }}" class="form-label">{{ _("Min stars") }}</label>
-                                <input type="number" class="form-control" id="min_stars{{ query.id }}" name="min_stars" min="0" max="5" step="0.1" value="{{ query.min_stars }}" placeholder="{{ _('Any') }}">
-                            </div>
-                            <div class="col-4">
-                                <label for="min_reviews{{ query.id }}" class="form-label">{{ _("Min reviews") }}</label>
-                                <input type="number" class="form-control" id="min_reviews{{ query.id }}" name="min_reviews" min="0" step="1" value="{{ query.min_reviews }}" placeholder="{{ _('Any') }}">
-                            </div>
-                        </div>
-                        <div class="form-check form-switch mt-3">
-                            <input class="form-check-input" type="checkbox" role="switch" id="push{{ query.id }}" name="push" {% if query.push %}checked{% endif %}>
-                            <label class="form-check-label" for="push{{ query.id }}">{{ _("Push notifications for this query") }}</label>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
-                        <button type="submit" class="btn btn-primary">{{ _("Save changes") }}</button>
+                    <div class="sheet-body">
+                        {{ query_fields(query.id, query) }}
+                        <button type="submit" class="btn btn-primary btn-lg sheet-submit">{{ _("Save changes") }}</button>
                     </div>
                 </form>
             </div>
@@ -184,12 +164,12 @@
     document.addEventListener('click', function (event) {
         const input = event.target.closest && event.target.closest('input[name="push"]');
         if (!input || !input.checked || !window.vnPush) return;
-        const holder = input.closest('.form-check');
-        let hint = holder.querySelector('.push-hint');
+        const holder = input.closest('.ios-group');
+        let hint = holder.parentNode.querySelector('.push-hint');
         if (!hint) {
-            hint = document.createElement('div');
-            hint.className = 'form-text push-hint';
-            holder.appendChild(hint);
+            hint = document.createElement('p');
+            hint.className = 'ios-foot push-hint';
+            holder.insertAdjacentElement('afterend', hint);
         }
         function say(text) { hint.textContent = text; }
         if (!vnPush.supported) {

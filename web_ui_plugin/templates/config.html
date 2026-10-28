@@ -46,7 +46,7 @@
                     </div>
                     <label class="ios-row" for="language"><span class="ios-label">{{ _("Language") }}</span>
                         <select class="ios-select" id="language" name="language">
-                            <option value="" {% if not us.language %}selected{% endif %}>{{ _("Automatic (browser language)") }}</option>
+                            <option value="" {% if not us.language %}selected{% endif %}>{{ _("Automatic") }}</option>
                             {% for code, name in languages %}<option value="{{ code }}" {% if us.language == code %}selected{% endif %}>{{ name }}</option>{% endfor %}
                         </select></label>
                     <label class="ios-row" for="timezone"><span class="ios-label">{{ _("Timezone") }}</span>
@@ -69,19 +69,28 @@
 
                 <div class="ios-title">{{ _("Stored items") }}</div>
                 <div class="ios-group">
-                    <label class="ios-row" for="cleanup_interval"><span class="ios-label">{{ _("Remove sold and removed items") }}<span class="ios-sub">{{ _("Checks the saved listings on Vinted and drops the ones that are gone.") }}</span></span>
-                        <select class="ios-select" id="cleanup_interval" name="cleanup_interval">
-                            {% set cleanup = us.cleanup_interval or '0' %}
-                            <option value="0" {% if cleanup == '0' %}selected{% endif %}>{{ _("Off") }}</option>
-                            <option value="1" {% if cleanup == '1' %}selected{% endif %}>{{ _("Every hour") }}</option>
-                            <option value="6" {% if cleanup == '6' %}selected{% endif %}>{{ _("Every 6 hours") }}</option>
-                            <option value="24" {% if cleanup == '24' %}selected{% endif %}>{{ _("Every day") }}</option>
-                        </select></label>
-                    <button type="button" class="ios-row ios-link ios-btn-row" id="cleanupNow"><span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-arrow-repeat"></i></span><span class="ios-stack">{{ _("Check now") }}<span class="ios-sub" id="cleanupStatus" aria-live="polite"></span></span></span></button>
+                    {% set cleanup = us.cleanup_interval or '0' %}
+                    <div class="ios-row stack">
+                        <span class="ios-label" id="cleanupLabel">{{ _("Remove sold and removed items") }}<span class="ios-sub">{{ _("Checks the saved listings on Vinted and drops the ones that are gone.") }}</span></span>
+                        <div class="segmented seg-full" role="radiogroup" aria-labelledby="cleanupLabel">
+                            {% for value, label in (('0', _("Off")), ('1', _("Every hour")), ('6', _("Every 6 hours")), ('24', _("Every day"))) %}
+                            <label class="seg {% if cleanup == value %}active{% endif %}"><input type="radio" name="cleanup_interval" value="{{ value }}" {% if cleanup == value %}checked{% endif %}><span>{{ label }}</span></label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button type="button" class="ios-row ios-link ios-btn-row" id="cleanupNow">
+                        <span class="ios-label"><span class="row-ico" style="--c: #34C759"><i class="bi bi-arrow-repeat"></i></span>{{ _("Check now") }}</span>
+                        <span class="ios-value" id="cleanupStatus" aria-live="polite"></span>
+                    </button>
                 </div>
                 <p class="ios-foot">{{ _("Each item is looked at once per interval, a few at a time and with pauses, so Vinted is not overloaded. A sold item has to be seen sold twice before it goes. Opening an item also checks it.") }}</p>
                 <script>
                     (function () {
+                        document.querySelectorAll('input[name="cleanup_interval"]').forEach(function (radio) {
+                            radio.addEventListener('change', function () {
+                                document.querySelectorAll('input[name="cleanup_interval"]').forEach(function (r) { r.closest('.seg').classList.toggle('active', r.checked); });
+                            });
+                        });
                         const button = document.getElementById('cleanupNow');
                         const status = document.getElementById('cleanupStatus');
                         function show(state) {

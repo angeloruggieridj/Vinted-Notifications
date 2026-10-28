@@ -516,5 +516,6 @@
   "Every day": "Ogni giorno",
   "Check now": "Controlla ora",
   "Each item is looked at once per interval, a few at a time and with pauses, so Vinted is not overloaded. A sold item has to be seen sold twice before it goes. Opening an item also checks it.": "Ogni articolo viene controllato una volta per intervallo, pochi alla volta e con pause, per non sovraccaricare Vinted. Un articolo venduto deve risultare tale due volte prima di essere rimosso. Anche aprendo un articolo viene controllato.",
-  "See items": "Vedi articoli"
+  "See items": "Vedi articoli",
+  "Automatic": "Automatica"
 }

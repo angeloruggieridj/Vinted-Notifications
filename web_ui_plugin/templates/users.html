@@ -62,7 +62,7 @@
             <div class="sheet-bar">
                 <button type="button" class="sheet-action" data-bs-dismiss="modal">{{ _("Cancel") }}</button>
                 <h2 class="sheet-title" id="newUserLabel">{{ _("New account") }}</h2>
-                <button type="submit" class="sheet-action sheet-done">{{ _("Create account") }}</button>
+                <span></span>
             </div>
             <div class="sheet-body">
                 <div class="ios-group">
@@ -78,6 +78,7 @@
                 </div>
                 <p class="ios-foot">{{ _("Passwords need at least %(n)s characters; a phrase of a few words works well. Common and breached passwords are refused.", n=min_password_length) }}</p>
                 <p class="ios-foot">{{ _("Members have their own queries, items, notifications and settings. Administrators also manage the server and the accounts.") }}</p>
+                <button type="submit" class="btn btn-primary btn-lg sheet-submit"><i class="bi bi-person-plus-fill"></i> {{ _("Create account") }}</button>
             </div>
         </form>
     </div>
